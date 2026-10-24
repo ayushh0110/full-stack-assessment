@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+backend/frontend_dist/
+backend/staticfiles/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Local tooling
+.claude/
+.DS_Store

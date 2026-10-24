@@ -1,0 +1,17 @@
+# docker compose up --build   →   http://localhost:8080
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DJANGO_SECRET_KEY: local-compose-only
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY:-}
+    depends_on:
+      - redis
