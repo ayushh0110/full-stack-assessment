@@ -199,7 +199,3 @@ frontend/src/
 - Forecast skill drops with lead time. Departures up to 7 days ahead are allowed, but near-term trips are more reliable.
 - Risk miles are attributed from checkpoint samples every N miles. Weather between checkpoints is assumed to match the nearest one.
 - Forecasts come through the visitor's browser. The server checks their shape, units and locations, but a visitor could still send made-up weather. That would only change their own result.
-
-## How AI was used
-
-The implementation plan was drafted with Claude Code and reviewed by a second AI assistant. Each review point was checked against the TomTom, Open-Meteo and MapLibre documentation, then accepted, changed or rejected. The full log is in `IMPLEMENTATION_PLAN.md`, Appendix A. The code was written with Claude Code, and every rule is covered by tests.

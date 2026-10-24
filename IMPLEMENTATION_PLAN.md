@@ -18,7 +18,7 @@ The driver enters an origin, a destination, a departure time and a load weight. 
 | 40% | Routes, weather, risk and recommendation logic | Built first as pure, fully tested functions. Missing data can never make a route look safer. |
 | 40% | UI, map and heatmap smoothness and performance | MUI interface that's been polished with care. WebGL map. The slider changes paint properties only. Routes load before the heavier data. |
 | 15% | Code quality | Clear layers, strict types, linting, CI, Docker |
-| 5% | Docs and Loom | README covering decisions, quotas and AI usage. The walkthrough opens on the live demo. |
+| 5% | Docs and Loom | README covering decisions and quotas. The walkthrough opens on the live demo. |
 
 > "Prioritize correctness and clarity over extra features." Anything in §13 starts only after the hosted app works end to end.
 
@@ -471,7 +471,6 @@ returns
 - Performance techniques, with profiling figures.
 - Testing.
 - Known limitations.
-- **How AI was used.** The plan was drafted with Claude Code and reviewed by a second AI. Each suggestion was checked against provider docs, then accepted, changed or rejected (Appendix A). The implementation was paired with AI, and every logic rule is covered by tests.
 
 **Loom (about 8 min)**
 1. **Open on the live app** with a trip already entered, 30 s.
