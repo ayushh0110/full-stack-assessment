@@ -1,7 +1,7 @@
 import { Autocomplete, Box, InputAdornment, TextField, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { usePlaceSearch } from '../api/hooks';
+import { usePlaceSearch, useSlow } from '../api/hooks';
 import type { Place } from '../api/types';
 
 interface Props {
@@ -16,6 +16,7 @@ export function PlaceInput({ label, icon, value, onChange, error }: Props) {
   const [input, setInput] = useState('');
   const search = usePlaceSearch(input);
   const typedEnough = input.trim().length >= 3;
+  const slow = useSlow(search.isFetching, 5000);
 
   return (
     <Autocomplete
@@ -28,6 +29,7 @@ export function PlaceInput({ label, icon, value, onChange, error }: Props) {
       getOptionLabel={(place) => place.label}
       isOptionEqualToValue={(a, b) => a.lat === b.lat && a.lon === b.lon}
       loading={search.isFetching}
+      loadingText={slow ? 'Waking up the server, this can take up to a minute…' : 'Searching…'}
       noOptionsText={
         !typedEnough
           ? 'Type at least 3 letters'

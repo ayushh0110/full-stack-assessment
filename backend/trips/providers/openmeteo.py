@@ -22,6 +22,7 @@ from .http import request
 log = logging.getLogger(__name__)
 
 HOURLY = "wind_speed_10m,rain,showers,snowfall"
+# Units exactly as Open-Meteo labels them in "hourly_units" (it spells miles per hour "mp/h").
 EXPECTED_UNITS = {"wind_speed_10m": "mp/h", "rain": "inch", "showers": "inch", "snowfall": "inch"}
 CM_PER_INCH = 2.54
 BATCH_SIZE = 100
@@ -100,7 +101,9 @@ class OpenMeteoClient:
             for batch, series in zip(batches, fetched, strict=True):
                 result.update(zip(batch, series, strict=True))
 
-        fresh = {keys[loc]: result[loc].to_dict() for loc in missing if result[loc] is not None}
+        fresh = {
+            keys[loc]: found.to_dict() for loc in missing if (found := result[loc]) is not None
+        }
         if fresh:
             cache.set_many(fresh, timeout=settings.WEATHER_TTL_S)
         return result

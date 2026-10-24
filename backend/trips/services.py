@@ -79,7 +79,7 @@ def _track_to_store(track: Track) -> dict[str, list]:
 
 def _track_from_store(data: dict[str, list]) -> Track:
     return Track(
-        [tuple(p) for p in data["points"]],
+        [(p[0], p[1]) for p in data["points"]],
         np.asarray(data["cum_mi"], dtype=float),
         np.asarray(data["elapsed_s"], dtype=float),
     )
@@ -272,8 +272,8 @@ def _segments(display: Track, checkpoints: list[dict[str, Any]]) -> list[dict[st
     for cp in checkpoints:
         if cp["to_mi"] <= cp["from_mi"]:
             continue
-        coords = slice_between(display.points, display.cum_mi, cp["from_mi"], cp["to_mi"])
-        coords = [[round(a, 5), round(b, 5)] for a, b in coords]
+        piece = slice_between(display.points, display.cum_mi, cp["from_mi"], cp["to_mi"])
+        coords = [[round(a, 5), round(b, 5)] for a, b in piece]
         if segments and segments[-1]["level"] == cp["level"]:
             segments[-1]["coords"].extend(coords[1:])
         else:
@@ -341,9 +341,9 @@ def assess(rs_id: str, interval_mi: int) -> dict[str, Any]:
                     "lon": round(slot.lon, 5),
                     "eta_utc": _iso(eta),
                     "tz": timezone_at(slot.lat, slot.lon),
-                    "wind_mph": _round(weather and weather.wind_mph, 1),
-                    "rain_in_hr": _round(weather and weather.rain_in_hr, 3),
-                    "snow_in_hr": _round(weather and weather.snow_in_hr, 2),
+                    "wind_mph": None if weather is None else round(weather.wind_mph, 1),
+                    "rain_in_hr": None if weather is None else round(weather.rain_in_hr, 3),
+                    "snow_in_hr": None if weather is None else round(weather.snow_in_hr, 2),
                     "levels": {
                         "wind": None if result.wind is None else int(result.wind),
                         "rain": None if result.rain is None else int(result.rain),

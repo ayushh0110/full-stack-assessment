@@ -16,6 +16,7 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import dayjs from 'dayjs';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
+import { useSlow } from '../api/hooks';
 import type { Interval, Place, TripInput } from '../api/types';
 import { zoneAbbreviation } from '../lib/format';
 import { useAppStore } from '../store';
@@ -48,6 +49,7 @@ export function TripForm({ onSubmit, submitting, serverErrors }: Props) {
   const [load, setLoad] = useState('38000');
   const [departureTouched, setDepartureTouched] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const slowSubmit = useSlow(submitting);
 
   // Departure is entered as local time at the origin, so the picker follows the origin's zone.
   const tz = origin?.tz ?? BROWSER_TZ;
@@ -168,6 +170,11 @@ export function TripForm({ onSubmit, submitting, serverErrors }: Props) {
         >
           {submitting ? 'Finding routes…' : 'Plan routes'}
         </Button>
+        {slowSubmit && (
+          <FormHelperText sx={{ textAlign: 'center', mt: '4px !important' }}>
+            Still working. The free server may be waking up, which can take up to a minute.
+          </FormHelperText>
+        )}
       </Stack>
     </Box>
   );

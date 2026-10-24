@@ -13,6 +13,10 @@ Load rules (strictly greater than; they can only raise the wind level):
     wind >= 55 mph                    -> No Travel for any load
     wind 45–54 mph and load > 30,000  -> No Travel
     wind 35–44 mph and load > 40,000  -> Severe
+
+Wind is the forecast's sustained 10 m wind speed, the literal reading of the brief's "Wind". These
+thresholds would also suit gusts, which run higher and would flag risk more often; using them
+would only change which forecast variable is fetched, not these rules.
 """
 
 from __future__ import annotations

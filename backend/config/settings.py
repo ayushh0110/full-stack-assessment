@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -69,6 +70,7 @@ WHITENOISE_IMMUTABLE_FILE_TEST = _immutable_asset
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 REDIS_URL = os.environ.get("REDIS_URL", "")
+CACHES: dict[str, dict[str, Any]]
 if REDIS_URL:
     CACHES = {
         "default": {
@@ -84,7 +86,7 @@ else:
         }
     }
 
-REST_FRAMEWORK = {
+REST_FRAMEWORK: dict[str, Any] = {
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "UNAUTHENTICATED_USER": None,

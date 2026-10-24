@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 class TripError(Exception):
-    status_code = status.HTTP_400_BAD_REQUEST
+    status_code: int = status.HTTP_400_BAD_REQUEST
     code = "invalid"
 
     def __init__(self, message: str, field: str | None = None) -> None:
@@ -66,8 +66,9 @@ def api_exception_handler(exc: Exception, context: dict) -> Response | None:
     if isinstance(exc, ValidationError):
         response.data = _body("invalid", "Please check the highlighted fields.", response.data)
     elif isinstance(exc, Throttled):
-        wait = f" Try again in {exc.wait:.0f} s." if exc.wait else ""
-        response.data = _body("throttled", f"Too many requests.{wait}")
+        wait = getattr(exc, "wait", None)
+        hint = f" Try again in {wait:.0f} s." if wait else ""
+        response.data = _body("throttled", f"Too many requests.{hint}")
     else:
         response.data = _body(
             getattr(exc, "default_code", "error"), str(getattr(exc, "detail", exc))

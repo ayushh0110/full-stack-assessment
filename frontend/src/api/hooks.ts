@@ -14,6 +14,21 @@ export function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+/** True once `active` has stayed true for `delayMs`: a request this slow usually means the
+ * free-tier server is waking up, which is worth telling the user. */
+export function useSlow(active: boolean, delayMs = 6000): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [active, delayMs]);
+  return active && slow;
+}
+
 export function usePlaceSearch(query: string) {
   const debounced = useDebounced(query.trim(), 300);
   return useQuery({

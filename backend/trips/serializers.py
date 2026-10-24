@@ -12,7 +12,10 @@ from trips.services import TripRequest
 class PlaceSerializer(serializers.Serializer):
     lat = serializers.FloatField(min_value=-90, max_value=90)
     lon = serializers.FloatField(min_value=-180, max_value=180)
-    label = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    # DRF lifts declared fields off the class, so this never shadows Field.label at runtime.
+    label = serializers.CharField(  # type: ignore[assignment]
+        max_length=200, required=False, allow_blank=True, default=""
+    )
 
 
 class RouteSetRequestSerializer(serializers.Serializer):

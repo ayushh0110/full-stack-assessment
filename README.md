@@ -6,6 +6,8 @@ A React + Django app that helps a truck driver pick the safest route. It compare
 - **Backend:** Python 3.12, Django 5, Django REST Framework, Redis cache, shapely, numpy
 - **Services:** TomTom Routing API (truck mode), Open-Meteo forecast API, Photon place search, OpenFreeMap basemap
 
+> **Note on the live demo:** it runs on Render's free plan, which puts the server to sleep after 15 minutes without visitors. If the page is slow to open, the server is waking up. That takes about a minute, and everything is fast after that.
+
 ## Run it
 
 ### Docker (app + Redis)
@@ -103,6 +105,7 @@ The brief leaves a few details open. These are the choices made, each kept in on
 | Load rules | "Over 30,000 / 40,000 lb" is strictly greater than. They only raise the wind level. |
 | Departure time zone | Entered as local time at the origin. The zone is shown in the form, and daylight-saving gaps are rejected. |
 | Departure window | From one hour ago to 7 days ahead, so the whole trip stays inside the forecast range. |
+| Wind | The brief says "Wind", so the forecast's sustained 10 m wind speed is classified. Gusts run higher and would be the more cautious reading; switching would only change which forecast value is fetched. |
 | Forecast slider | Forecast hours 0–48 from now. When the selected hour falls inside the trip, a truck marker shows where the selected route puts the driver. |
 | Load vs gross weight | The risk rules use the load as entered. Routing receives gross weight = load + 35,000 lb tare, which the form shows. |
 

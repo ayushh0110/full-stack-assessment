@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import ClassVar
-
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.request import Request
@@ -19,7 +17,7 @@ from trips.serializers import (
 
 
 class HealthView(APIView):
-    throttle_classes: ClassVar[list] = []
+    throttle_classes = ()
 
     def get(self, request: Request) -> Response:
         cache.set("health:ping", "ok", timeout=10)

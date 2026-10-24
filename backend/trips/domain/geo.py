@@ -40,9 +40,9 @@ def cumulative_mi(points: Sequence[LatLon]) -> np.ndarray:
 def point_at(points: Sequence[LatLon], cum_mi: np.ndarray, mile: float) -> LatLon:
     """Position `mile` miles along the polyline, interpolated within its segment."""
     if mile <= 0:
-        return tuple(points[0])
+        return (points[0][0], points[0][1])
     if mile >= cum_mi[-1]:
-        return tuple(points[-1])
+        return (points[-1][0], points[-1][1])
     i = int(np.searchsorted(cum_mi, mile, side="right")) - 1
     span = cum_mi[i + 1] - cum_mi[i]
     t = 0.0 if span == 0 else (mile - cum_mi[i]) / span
@@ -56,7 +56,7 @@ def slice_between(
     """The stretch of polyline between two mileposts, with interpolated end points."""
     lo = int(np.searchsorted(cum_mi, start_mi, side="right"))
     hi = int(np.searchsorted(cum_mi, end_mi, side="left"))
-    inner = [tuple(points[k]) for k in range(lo, hi)]
+    inner = [(points[k][0], points[k][1]) for k in range(lo, hi)]
     return [point_at(points, cum_mi, start_mi), *inner, point_at(points, cum_mi, end_mi)]
 
 
@@ -101,7 +101,7 @@ class LocalProjection:
         self.kx = MILES_PER_DEG_LAT * math.cos(math.radians(lat0))
         self.ky = MILES_PER_DEG_LAT
 
-    def to_xy(self, points: Sequence[LatLon]) -> np.ndarray:
+    def to_xy(self, points: Sequence[LatLon] | np.ndarray) -> np.ndarray:
         arr = np.asarray(points, dtype=float).reshape(-1, 2)
         return np.column_stack([arr[:, 1] * self.kx, arr[:, 0] * self.ky])
 
