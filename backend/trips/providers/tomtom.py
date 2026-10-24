@@ -126,7 +126,6 @@ class TomTomRouting:
             ("vehicleCommercial", "true"),
             ("vehicleWeight", str(round(gross_lb * KG_PER_LB))),
             ("maxAlternatives", str(max_alternatives)),
-            ("alternativeType", "anyRoute"),
             ("departAt", _depart_at(depart_at)),
             ("traffic", "true"),
             ("routeRepresentation", "polyline"),
@@ -134,6 +133,9 @@ class TomTomRouting:
             ("extendedRouteRepresentation", "travelTime"),
             ("instructionsType", "coded"),
         ]
+        if max_alternatives > 0:
+            # TomTom rejects alternativeType on a request that asks for no alternatives.
+            params.append(("alternativeType", "anyRoute"))
         try:
             if avoid:
                 body = {

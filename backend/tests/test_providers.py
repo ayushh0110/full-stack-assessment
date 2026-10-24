@@ -155,6 +155,7 @@ def test_tomtom_request_uses_truck_mode():
     assert params["vehicleWeight"] == "33112"  # 73,000 lb in kg
     assert params.get_list("extendedRouteRepresentation") == ["distance", "travelTime"]
     assert params["departAt"].startswith(later.strftime("%Y-%m-%dT%H:%M"))
+    assert (params["maxAlternatives"], params["alternativeType"]) == ("2", "anyRoute")
 
 
 @respx.mock
@@ -173,6 +174,10 @@ def test_tomtom_avoid_areas_are_posted():
     body = json.loads(route.calls[0].request.content)
     corner = body["avoidAreas"]["rectangles"][0]["southWestCorner"]
     assert corner == {"latitude": 40.1, "longitude": -99.0}
+    # TomTom answers 400 if alternativeType is sent with maxAlternatives=0.
+    params = route.calls[0].request.url.params
+    assert params["maxAlternatives"] == "0"
+    assert "alternativeType" not in params
 
 
 @respx.mock
