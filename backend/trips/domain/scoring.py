@@ -163,6 +163,14 @@ def _exclusion(score: RouteScore, format_time: Callable[[datetime], str]) -> Exc
     return None
 
 
+def _routes(scores: Sequence[RouteScore]) -> str:
+    """ "Route A", "Routes A and B", "Routes A, B and C"."""
+    ids = [s.route_id for s in scores]
+    if len(ids) == 1:
+        return f"Route {ids[0]}"
+    return f"Routes {', '.join(ids[:-1])} and {ids[-1]}"
+
+
 def _first_difference(
     a: RouteScore, b: RouteScore, criteria: Sequence[Criterion]
 ) -> Criterion | None:
@@ -240,17 +248,31 @@ def recommend(
                 f"the fastest route (Route {fastest.route_id})."
             )
     elif complete:
+        # Every fully forecast route has No Travel miles; any others lack complete forecasts.
         status = "no_safe_route"
+        incomplete = [s for s in scores if not s.complete]
         ranked = sorted(complete, key=lambda s: (_rounded(s, "no_travel_mi"), *pdf_key(s)))
         pick = ranked[0]
         if len(ranked) >= 2:
             criterion = _first_difference(pick, ranked[1], ("no_travel_mi", *RANKED))
             decisive = {criterion} if criterion else set()
-        explanation = (
-            "No route is safe at this departure time: every route has No Travel conditions. "
-            f"Route {pick.route_id} is the least risky option "
-            f"({format_miles(pick.no_travel_mi)} of No Travel), but it is not recommended."
-        )
+        elif incomplete:
+            decisive = {"coverage"}
+        no_travel = format_miles(pick.no_travel_mi)
+        if incomplete:
+            explanation = (
+                f"No route is safe at this departure time: {_routes(complete)} "
+                f"{'has' if len(complete) == 1 else 'have'} No Travel conditions, and "
+                f"{_routes(incomplete)} {'lacks' if len(incomplete) == 1 else 'lack'} "
+                f"complete forecasts. Route {pick.route_id} is the least risky fully forecast "
+                f"option ({no_travel} of No Travel), but it is not recommended."
+            )
+        else:
+            explanation = (
+                "No route is safe at this departure time: every route has No Travel "
+                f"conditions. Route {pick.route_id} is the least risky option ({no_travel} of "
+                "No Travel), but it is not recommended."
+            )
     else:
         status = "insufficient_data"
         pick = None

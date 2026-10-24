@@ -105,6 +105,32 @@ def test_all_routes_no_travel():
     assert rec.status == "no_safe_route"
     assert rec.route_id == "A"
     assert "not recommended" in rec.explanation
+    assert "every route has No Travel conditions" in rec.explanation
+
+
+def test_no_travel_on_one_route_and_missing_forecasts_on_the_other():
+    a = route("A", [(90, L), (10, NT)])
+    b = route("B", [(90, L), (10, None)])  # no No Travel, but incomplete
+    rec = recommend([a, b], fmt)
+    assert rec.status == "no_safe_route"
+    assert rec.route_id == "A"
+    assert "every route has No Travel" not in rec.explanation
+    assert rec.explanation == (
+        "No route is safe at this departure time: Route A has No Travel conditions, and "
+        "Route B lacks complete forecasts. Route A is the least risky fully forecast option "
+        "(10 mi of No Travel), but it is not recommended."
+    )
+    assert [r.criterion for r in rec.comparison if r.decisive] == ["coverage"]
+
+
+def test_no_safe_route_wording_with_several_routes_in_each_group():
+    routes = [
+        route("A", [(90, L), (10, NT)]),
+        route("B", [(80, L), (20, NT)]),
+        route("C", [(90, L), (10, None)]),
+    ]
+    rec = recommend(routes, fmt)
+    assert "Routes A and B have No Travel conditions, and Route C lacks" in rec.explanation
 
 
 def test_all_routes_incomplete():
