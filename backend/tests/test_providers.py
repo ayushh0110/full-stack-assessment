@@ -163,6 +163,20 @@ def test_tomtom_avoid_areas_are_posted():
 
 
 @respx.mock
+def test_tomtom_no_route_is_explained_plainly():
+    body = {
+        "detailedError": {
+            "code": "NO_ROUTE_FOUND",
+            "message": "Engine error while executing route request: NO_ROUTE_FOUND: "
+            "Origin and destination have different ProductId's.",
+        }
+    }
+    respx.get(url__startswith=tomtom.BASE_URL).mock(return_value=httpx.Response(400, json=body))
+    with pytest.raises(UpstreamError, match="no drivable route"):
+        tomtom.TomTomRouting(api_key="k").routes((31, -99), (-41, 174), datetime.now(UTC), 50_000)
+
+
+@respx.mock
 def test_tomtom_bad_key():
     respx.get(url__startswith=tomtom.BASE_URL).mock(return_value=httpx.Response(403))
     with pytest.raises(UpstreamError, match="API key"):

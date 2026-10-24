@@ -88,6 +88,11 @@ def _error_message(response: httpx.Response) -> str:
         )
     except ValueError:
         pass
+    if "NO_ROUTE_FOUND" in detail:
+        return (
+            "There's no drivable route between these places. They may be on different "
+            "continents or islands; choose an origin and destination connected by road."
+        )
     return f"TomTom could not plan this route{': ' + detail if detail else '.'}"
 
 
