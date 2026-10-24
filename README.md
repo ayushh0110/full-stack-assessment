@@ -51,15 +51,16 @@ flowchart LR
   B[Browser<br/>React + MUI + MapLibre] -- same origin --> W[Django + DRF<br/>serves SPA + /api/v1]
   W --> TT[TomTom<br/>truck routing]
   W --> PH[Photon<br/>place search]
-  W --> OM[Open-Meteo<br/>hourly forecast]
-  W <--> R[(Redis<br/>route sets · forecasts · quotas)]
+  W <--> R[(Redis<br/>route sets · quotas)]
+  B -- raw forecasts, relayed to the server --> OM[Open-Meteo<br/>hourly forecast]
 ```
 
 1. **`POST /api/v1/route-sets`** converts the departure (entered as local time at the origin) to UTC, fetches up to three truck routes, and stores them in Redis for an hour. The map draws the routes as soon as this returns.
-2. The browser then requests two things in parallel:
-   - **`GET …/assessment?interval_mi=25`** places checkpoints, works out each one's ETA, fetches forecasts, scores risk and picks the recommendation.
-   - **`GET …/heatmap`** returns the corridor grid with risk for forecast hours 0–48.
-3. Switching between 10, 25 and 50 miles only repeats the assessment. The routes are reused and most forecasts come from the cache.
+2. For the assessment, the server places checkpoints, works out each one's ETA, and says which forecasts it needs (**`GET …/assessment/forecast-request`**). The browser fetches those from Open-Meteo and posts them back (**`POST …/assessment`**). The server checks them, reads each checkpoint's weather at its ETA, scores risk and picks the recommendation.
+3. The heatmap works the same way, at the same time: the corridor grid comes from the server, the browser fetches forecast hours 0–48, and the server returns the risk for every cell and hour.
+4. Switching between 10, 25 and 50 miles only repeats the assessment. The routes are reused, and forecasts already fetched in this session aren't fetched again.
+
+**Why the browser fetches the forecast:** Open-Meteo's free tier is limited per IP address. On shared hosting like Render's free plan, other apps on the same outbound IP use up that daily limit, and the server's weather requests fail. Fetched from the browser, each visitor uses their own quota. The browser only passes the raw data along: the server decides exactly what to fetch, checks units and shape on every response, and does all the risk logic.
 
 ### Checkpoints and ETAs
 
@@ -69,7 +70,7 @@ flowchart LR
 
 ### Weather at the ETA
 
-- Forecasts come from Open-Meteo, pinned to NOAA's GFS/HRRR model (`gfs_seamless`). Units are requested in mph and inches and checked on every response.
+- Forecasts come from Open-Meteo, pinned to NOAA's GFS/HRRR model (`gfs_seamless`). Units are requested in mph and inches, and the server checks them on every response.
 - Rain is `rain + showers`, the total liquid precipitation for the hour. Snow is `snowfall` in inches per hour. Wind is 10 m wind speed.
 - Precipitation values are totals for the *preceding* hour, so an ETA of 14:20 reads the 15:00 value, which covers 14:00–15:00. Wind speed is instantaneous, so it's interpolated between 14:00 and 15:00.
 
@@ -114,10 +115,8 @@ The brief leaves a few details open. These are the choices made, each kept in on
 - **Rendering:** MapLibre GL draws with WebGL. Every map source and layer is created once. After that, selecting a route only changes filters, and new data only replaces source data.
 - **Slider:** each cell stores its risk for every hour (`r0…r48`), so moving the slider only swaps the colour expression (`setPaintProperty`). That happens at most once per animation frame, outside React rendering. Measured in headless Chrome while stepping through all 48 hours: **0 long tasks**, median frame time 8.3 ms.
 - **Heatmap colour:** each cell is coloured by its exact risk class. MapLibre's built-in heatmap layer colours by point density, which wouldn't map to a real risk level.
-- **Weather fetching:** checkpoints are snapped to a 0.05° grid and de-duplicated across routes. The cache is read with one Redis `MGET`, and the missing locations are fetched in batches of 100, 4 in parallel.
-- **Measured timings** (Denver → Chicago, departing in 2 hours):
-  - Assessment: about 0.6 s cold, 0.04 s warm.
-  - Heatmap: 272 cells × 49 hours in about 0.7 s, a 30 KB response.
+- **Weather fetching:** checkpoints are snapped to a 0.05° grid and de-duplicated across routes, so overlapping routes share forecasts. The browser fetches them in batches of 100 locations, 4 in parallel, and keeps what it has fetched for the session.
+- **Measured** (Denver → Chicago, local run): the heatmap covers 272 cells × 49 hours in a 30 KB response.
 - **Payload:** route geometry is simplified on the server for display. Distance and time calculations use the full-resolution route.
 
 ## API
@@ -129,8 +128,12 @@ All endpoints are under `/api/v1`. Errors look like `{"error": {"code", "message
 | GET | `/health` | Cache status, routing provider, quota usage |
 | GET | `/geocode?q=denver` | `[{label, lat, lon, tz}]`. 90 requests/min per IP |
 | POST | `/route-sets` | `{origin, destination, departure_local, load_lb}`. 20 requests/min per IP |
-| GET | `/route-sets/{id}/assessment?interval_mi=10\|25\|50` | Checkpoints, segments, summaries, recommendation. 60 requests/min per IP |
-| GET | `/route-sets/{id}/heatmap` | `{start_utc, hours, cell_deg, cells, risk[hour][cell]}`. `null` means no data |
+| GET | `/route-sets/{id}/assessment/forecast-request?interval_mi=10\|25\|50` | Open-Meteo URL, parameters and locations to fetch |
+| POST | `/route-sets/{id}/assessment` | `{interval_mi, forecasts}` (one Open-Meteo location object or `null` per requested location) → checkpoints, segments, summaries, recommendation |
+| GET | `/route-sets/{id}/heatmap/forecast-request` | `{start_utc, forecast}` for the corridor cells |
+| POST | `/route-sets/{id}/heatmap` | `{start_utc, forecasts}` → `{start_utc, hours, cell_deg, cells, risk[hour][cell]}`. `null` means no data |
+
+The assessment and heatmap endpoints share a limit of 60 requests/min per IP.
 
 Error codes:
 
@@ -147,13 +150,13 @@ Error codes:
 With `TOMTOM_API_KEY` set, routes come from TomTom's truck routing:
 - It's given the vehicle's weight and commercial status, and the departure time for traffic-aware ETAs.
 - It requests up to two alternatives.
-- If fewer than three routes come back, it makes one more request that avoids the middle of the shared corridor. The extra route is kept only if it's genuinely different, no more than 30% slower or longer, and doesn't double back.
+- If fewer than three routes come back, it makes one more request that avoids the middle stretch of every route found so far, so the router has to use a different corridor. The extra route is kept only if it's genuinely different, no more than 30% slower or longer, and doesn't double back.
 
 Without a key, the app falls back to the public OSRM server so it can be run and evaluated without signing up. OSRM is **car** routing and ignores truck restrictions, and the UI says so. All weather and risk logic is identical either way.
 
 ## Quotas
 
-Free tiers: TomTom Routing 20,000 requests/month; Open-Meteo 10,000 calls/day for non-commercial use. Redis caches place searches (24 h), route sets (1 h) and forecasts (1 h). Daily counters stop each provider before its limit (settings in `.env.example`). When a budget is used up, the API returns 503 with a clear message, and cached results keep working.
+Free tiers: TomTom Routing 20,000 requests/month; Open-Meteo 10,000 calls/day per IP for non-commercial use, which each visitor's browser uses for their own forecasts. Redis caches place searches (24 h) and route sets (1 h). Daily counters stop the routing and place-search providers before their limits (settings in `.env.example`). When a budget is used up, the API returns 503 with a clear message, and cached results keep working.
 
 ## Deploying (Render)
 
@@ -171,7 +174,7 @@ On the free plan the service sleeps after 15 minutes without traffic, and the fi
 backend/
   config/                 Django settings and URLs
   trips/domain/           pure logic: risk, weather timing, sampling, scoring, alternatives, corridor grid
-  trips/providers/        TomTom, OSRM, Photon, Open-Meteo clients, quota budgets
+  trips/providers/        TomTom, OSRM, Photon clients; Open-Meteo request and validation; quota budgets
   trips/services.py       orchestration; views stay thin
   tests/                  unit tests for every rule, plus API tests with fake providers
 frontend/src/
@@ -185,6 +188,7 @@ frontend/src/
 - ETAs assume continuous driving. Mandatory rest breaks (hours-of-service rules) aren't modelled.
 - Forecast skill drops with lead time. Departures up to 7 days ahead are allowed, but near-term trips are more reliable.
 - Risk miles are attributed from checkpoint samples every N miles. Weather between checkpoints is assumed to match the nearest one.
+- Forecasts come through the visitor's browser. The server checks their shape, units and locations, but a visitor could still send made-up weather. That would only change their own result.
 
 ## How AI was used
 

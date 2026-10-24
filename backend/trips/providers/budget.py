@@ -18,7 +18,6 @@ LABELS = {
     "tomtom_routing": "routing",
     "osrm": "routing",
     "photon": "place search",
-    "open_meteo": "weather",
 }
 TTL_S = 2 * 24 * 3600
 

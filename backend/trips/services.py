@@ -12,15 +12,14 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 from django.conf import settings
-from django.core.cache import cache
 from timezonefinder import TimezoneFinder
 
 from trips import store
 from trips.domain import risk
 from trips.domain.alternatives import avoid_rects, distinct_share, rejection_reason
-from trips.domain.corridor import corridor_grid
-from trips.domain.geo import METERS_PER_MILE, cumulative_mi, slice_between
-from trips.domain.sampling import Track, build_time_profile, place_checkpoints
+from trips.domain.corridor import CellGrid, corridor_grid
+from trips.domain.geo import METERS_PER_MILE, LatLon, cumulative_mi, slice_between
+from trips.domain.sampling import Slot, Track, build_time_profile, place_checkpoints
 from trips.domain.scoring import (
     Recommendation,
     RouteScore,
@@ -29,9 +28,9 @@ from trips.domain.scoring import (
     score_route,
 )
 from trips.domain.timeutil import HOUR, NonexistentLocalTime, floor_hour, local_to_utc
-from trips.domain.weather import precipitation_stamp, weather_at
+from trips.domain.weather import HourlySeries, precipitation_stamp, weather_at
 from trips.exceptions import InvalidTrip, QuotaExhausted, UpstreamError
-from trips.providers.openmeteo import OpenMeteoClient, snap
+from trips.providers.openmeteo import InvalidForecast, forecast_request, series_for, snap
 from trips.providers.osrm import OsrmRouting
 from trips.providers.tomtom import TomTomRouting
 from trips.providers.types import Place, RawRoute, RoutingProvider
@@ -42,9 +41,12 @@ ANALYSIS_TOLERANCE_DEG = 0.0002  # ~20 m: keeps distances exact, drops redundant
 DISPLAY_TOLERANCE_DEG = 0.0008  # ~80 m: plenty for the map, a fraction of the payload
 CORRIDOR_TOLERANCE_DEG = 0.005
 HEATMAP_HOURS = 48
+# How far a relayed heatmap start may be from the current hour (clock skew, slow fetches).
+HEATMAP_START_SLACK = timedelta(hours=2)
 MAX_DEPARTURE_AHEAD = timedelta(days=7)
 MAX_DEPARTURE_BEHIND = timedelta(hours=1)
 ROUTE_IDS = "ABC"
+MAX_AVOID_RECTS = 10  # TomTom's limit per request
 
 
 @functools.cache
@@ -60,10 +62,6 @@ def routing_provider() -> RoutingProvider:
     if settings.TOMTOM_API_KEY:
         return TomTomRouting()
     return OsrmRouting()
-
-
-def weather_client() -> OpenMeteoClient:
-    return OpenMeteoClient()
 
 
 # --- track (de)serialisation ------------------------------------------------
@@ -134,7 +132,10 @@ def _fetch_routes(
         raise UpstreamError("No route was found between these places.")
 
     if len(routes) < 3 and provider.supports_avoid_areas:
-        fastest = min(routes, key=lambda r: r.track.duration_s)
+        # Block the middle of every route found so far, so the router has to find a genuinely
+        # different corridor rather than rediscover one we already have.
+        per_route = MAX_AVOID_RECTS // len(routes)
+        rects = [rect for r in routes for rect in avoid_rects(r.track, max_rects=per_route)]
         try:
             candidates = provider.routes(
                 origin,
@@ -142,7 +143,7 @@ def _fetch_routes(
                 departure,
                 gross_lb,
                 max_alternatives=0,
-                avoid=avoid_rects(fastest.track),
+                avoid=rects,
             )
         except (UpstreamError, QuotaExhausted) as exc:
             log.info("Fallback route request failed: %s", exc)
@@ -310,24 +311,67 @@ def _recommendation(rec: Recommendation) -> dict[str, Any]:
     }
 
 
-def assess(rs_id: str, interval_mi: int) -> dict[str, Any]:
+@dataclass(frozen=True)
+class _AssessmentPlan:
+    """Checkpoints for every route and the forecast window they need. Deterministic for a route
+    set and interval, so the forecast request and the scoring step always agree."""
+
+    route_set: dict[str, Any]
+    departure: datetime
+    tracks: dict[str, Track]
+    slots: dict[str, list[Slot]]
+    start: int
+    end: int
+    locations: list[LatLon]
+
+
+def _assessment_plan(rs_id: str, interval_mi: int) -> _AssessmentPlan:
     route_set = store.load(rs_id)
     departure = datetime.fromisoformat(route_set["departure_utc"])
     dep_ts = int(departure.timestamp())
-    load_lb = route_set["load_lb"]
-    origin_tz = ZoneInfo(route_set["origin_tz"])
-
     tracks = {r["id"]: _track_from_store(r["track"]) for r in route_set["routes"]}
     slots = {rid: place_checkpoints(track, interval_mi) for rid, track in tracks.items()}
     all_slots = [s for route_slots in slots.values() for s in route_slots]
-    start = floor_hour(dep_ts)
-    end = max(precipitation_stamp(dep_ts + round(s.elapsed_s)) for s in all_slots)
-    series = weather_client().fetch((snap(s.lat, s.lon) for s in all_slots), start, end)
+    return _AssessmentPlan(
+        route_set=route_set,
+        departure=departure,
+        tracks=tracks,
+        slots=slots,
+        start=floor_hour(dep_ts),
+        end=max(precipitation_stamp(dep_ts + round(s.elapsed_s)) for s in all_slots),
+        locations=list(dict.fromkeys(snap(s.lat, s.lon) for s in all_slots)),
+    )
+
+
+def _relayed_series(
+    locations: list[LatLon], forecasts: list[dict[str, Any] | None]
+) -> dict[LatLon, HourlySeries | None]:
+    try:
+        return series_for(locations, forecasts)
+    except InvalidForecast as exc:
+        raise InvalidTrip(str(exc), field="forecasts") from exc
+
+
+def assessment_forecast_request(rs_id: str, interval_mi: int) -> dict[str, Any]:
+    plan = _assessment_plan(rs_id, interval_mi)
+    return {
+        "route_set_id": rs_id,
+        "interval_mi": interval_mi,
+        "forecast": forecast_request(plan.locations, plan.start, plan.end),
+    }
+
+
+def assess(rs_id: str, interval_mi: int, forecasts: list[dict[str, Any] | None]) -> dict[str, Any]:
+    plan = _assessment_plan(rs_id, interval_mi)
+    series = _relayed_series(plan.locations, forecasts)
+    departure = plan.departure
+    load_lb = plan.route_set["load_lb"]
+    origin_tz = ZoneInfo(plan.route_set["origin_tz"])
 
     routes, scores = [], []
-    for rid, track in tracks.items():
+    for rid, track in plan.tracks.items():
         checkpoints, scored = [], []
-        for slot in slots[rid]:
+        for slot in plan.slots[rid]:
             eta = departure + timedelta(seconds=round(slot.elapsed_s))
             weather = weather_at(series.get(snap(slot.lat, slot.lon)), int(eta.timestamp()))
             result = risk.assess(weather, load_lb)
@@ -379,23 +423,42 @@ def assess(rs_id: str, interval_mi: int) -> dict[str, Any]:
 # --- heatmap -------------------------------------------------------------------
 
 
-def heatmap(rs_id: str, now: datetime | None = None) -> dict[str, Any]:
-    """Risk for each corridor cell at forecast hours 0–48 from the current hour."""
-    route_set = store.load(rs_id)
-    start = floor_hour(int((now or datetime.now(UTC)).timestamp()))
-    cache_key = f"hm:{rs_id}:{start}"
-    if (cached := cache.get(cache_key)) is not None:
-        return cached
-
+def _corridor(route_set: dict[str, Any]) -> CellGrid:
     corridor = [
         _track_from_store(r["track"]).simplified(CORRIDOR_TOLERANCE_DEG).points
         for r in route_set["routes"]
     ]
-    grid = corridor_grid(
+    return corridor_grid(
         corridor, buffer_mi=settings.HEATMAP_BUFFER_MI, max_cells=settings.HEATMAP_MAX_CELLS
     )
+
+
+def heatmap_forecast_request(rs_id: str, now: datetime | None = None) -> dict[str, Any]:
+    """Forecasts needed for the corridor cells at forecast hours 0–48 from the current hour."""
+    grid = _corridor(store.load(rs_id))
+    start = floor_hour(int((now or datetime.now(UTC)).timestamp()))
     end = start + (HEATMAP_HOURS + 1) * HOUR  # the last frame reads the hour after it
-    series = weather_client().fetch(grid.centers, start, end)
+    return {
+        "route_set_id": rs_id,
+        "start_utc": _iso(datetime.fromtimestamp(start, UTC)),
+        "forecast": forecast_request(grid.centers, start, end),
+    }
+
+
+def heatmap(
+    rs_id: str,
+    start_utc: datetime,
+    forecasts: list[dict[str, Any] | None],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Risk for each corridor cell at every forecast hour, from relayed forecasts."""
+    route_set = store.load(rs_id)
+    now = now or datetime.now(UTC)
+    start = int(start_utc.timestamp())
+    if start % HOUR or abs(start_utc - now) > HEATMAP_START_SLACK:
+        raise InvalidTrip("The heatmap start must be a recent whole hour.", field="start_utc")
+    grid = _corridor(route_set)
+    series = _relayed_series(grid.centers, forecasts)
     load_lb = route_set["load_lb"]
     frames = []
     for h in range(HEATMAP_HOURS + 1):
@@ -405,8 +468,7 @@ def heatmap(rs_id: str, now: datetime | None = None) -> dict[str, Any]:
             level = risk.assess(weather_at(series.get(cell), ts), load_lb).level
             frame.append(None if level is None else int(level))
         frames.append(frame)
-
-    result = {
+    return {
         "route_set_id": rs_id,
         "start_utc": _iso(datetime.fromtimestamp(start, UTC)),
         "hours": HEATMAP_HOURS + 1,
@@ -414,5 +476,3 @@ def heatmap(rs_id: str, now: datetime | None = None) -> dict[str, Any]:
         "cells": [[lat, lon] for lat, lon in grid.centers],
         "risk": frames,
     }
-    cache.set(cache_key, result, timeout=30 * 60)
-    return result

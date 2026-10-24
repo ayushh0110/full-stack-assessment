@@ -55,8 +55,30 @@ class RouteSetRequestSerializer(serializers.Serializer):
         )
 
 
+INTERVALS = [10, 25, 50]
+MAX_FORECASTS = 3000
+
+
+def _forecasts() -> serializers.ListField:
+    """Open-Meteo location objects relayed by the browser, one per requested location, in order;
+    null where the browser couldn't fetch one. Content is validated in providers.openmeteo."""
+    return serializers.ListField(
+        child=serializers.DictField(allow_null=True), max_length=MAX_FORECASTS
+    )
+
+
 class AssessmentQuerySerializer(serializers.Serializer):
-    interval_mi = serializers.ChoiceField(choices=[10, 25, 50], default=25)
+    interval_mi = serializers.ChoiceField(choices=INTERVALS, default=25)
+
+
+class AssessmentRequestSerializer(serializers.Serializer):
+    interval_mi = serializers.ChoiceField(choices=INTERVALS)
+    forecasts = _forecasts()
+
+
+class HeatmapRequestSerializer(serializers.Serializer):
+    start_utc = serializers.DateTimeField()
+    forecasts = _forecasts()
 
 
 class GeocodeQuerySerializer(serializers.Serializer):

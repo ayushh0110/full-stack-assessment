@@ -113,6 +113,26 @@ export interface Assessment {
   recommendation: Recommendation;
 }
 
+/** What the browser should fetch from Open-Meteo; the server decides every parameter. */
+export interface ForecastRequest {
+  url: string;
+  params: Record<string, string>;
+  batch_size: number;
+  locations: LatLon[];
+}
+
+export interface AssessmentForecastRequest {
+  route_set_id: string;
+  interval_mi: Interval;
+  forecast: ForecastRequest;
+}
+
+export interface HeatmapForecastRequest {
+  route_set_id: string;
+  start_utc: string;
+  forecast: ForecastRequest;
+}
+
 export interface Heatmap {
   route_set_id: string;
   start_utc: string;

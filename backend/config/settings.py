@@ -125,12 +125,13 @@ ROUTING_TARE_LB = env_int("ROUTING_TARE_LB", 35_000)
 HEATMAP_MAX_CELLS = env_int("HEATMAP_MAX_CELLS", 400)
 HEATMAP_BUFFER_MI = float(os.environ.get("HEATMAP_BUFFER_MI", 30))
 ROUTE_SET_TTL_S = env_int("ROUTE_SET_TTL_S", 3600)
-WEATHER_TTL_S = env_int("WEATHER_TTL_S", 3600)
+# Browsers relay Open-Meteo forecasts in the request body (a few hundred KB for long trips).
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
-# Daily budgets that stop us running through the providers' free tiers.
+# Daily budgets that stop us running through the providers' free tiers. Weather isn't listed:
+# each visitor's browser fetches it with that visitor's own Open-Meteo quota.
 QUOTAS = {
     "tomtom_routing": env_int("QUOTA_TOMTOM_ROUTING_DAILY", 600),
     "osrm": env_int("QUOTA_OSRM_DAILY", 1_000),
     "photon": env_int("QUOTA_PHOTON_DAILY", 5_000),
-    "open_meteo": env_int("QUOTA_OPEN_METEO_DAILY", 8_000),
 }

@@ -1,32 +1,35 @@
-"""Open-Meteo hourly forecasts for many locations: cache first, then batched parallel requests."""
+"""Open-Meteo hourly forecasts, fetched by the visitor's browser and validated here.
+
+Open-Meteo's free tier is limited per IP address, and shared hosting IPs (such as Render's free
+plan) run out of quota because of other tenants. So the server describes exactly what to fetch
+(`forecast_request`), the browser fetches it with the visitor's own quota, and the server checks
+and interprets every relayed response (`series_for`). All risk logic stays on the server.
+"""
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from itertools import pairwise
 from typing import Any
 
-import httpx
 from django.conf import settings
-from django.core.cache import cache
 
 from trips.domain.geo import LatLon
+from trips.domain.timeutil import HOUR
 from trips.domain.weather import HourlySeries
-from trips.exceptions import UpstreamError
-
-from . import budget
-from .http import request
-
-log = logging.getLogger(__name__)
 
 HOURLY = "wind_speed_10m,rain,showers,snowfall"
 # Units exactly as Open-Meteo labels them in "hourly_units" (it spells miles per hour "mp/h").
 EXPECTED_UNITS = {"wind_speed_10m": "mp/h", "rain": "inch", "showers": "inch", "snowfall": "inch"}
 CM_PER_INCH = 2.54
 BATCH_SIZE = 100
-WORKERS = 4
+# A returned grid point further than this from the requested location is not trusted.
+MAX_LOCATION_DRIFT_DEG = 0.3
+
+
+class InvalidForecast(ValueError):
+    """A relayed forecast is malformed, in unexpected units, or doesn't match the request."""
 
 
 def snap(lat: float, lon: float, step: float = 0.05) -> LatLon:
@@ -34,104 +37,96 @@ def snap(lat: float, lon: float, step: float = 0.05) -> LatLon:
     return (round(round(lat / step) * step, 4), round(round(lon / step) * step, 4))
 
 
-def _cache_key(model: str, loc: LatLon, start: int, end: int) -> str:
-    return f"wx:{model}:{loc[0]:.4f}:{loc[1]:.4f}:{start}:{end}"
-
-
 def _iso_hour(ts: int) -> str:
     return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M")
 
 
-def parse_series(item: dict[str, Any]) -> HourlySeries:
-    """One location's response. Units are checked rather than assumed: snowfall in cm is
-    converted, anything else unexpected is an error rather than silently skewed results."""
-    units = item.get("hourly_units", {})
-    snow_factor = 1.0
-    for variable, expected in EXPECTED_UNITS.items():
-        unit = units.get(variable)
-        if variable == "snowfall" and unit == "cm":
-            snow_factor = 1 / CM_PER_INCH
-        elif unit != expected:
-            raise UpstreamError(
-                f"Weather service returned {variable} in {unit!r}, expected {expected!r}."
-            )
-    hourly = item["hourly"]
-    rain = tuple(
-        None if r is None or s is None else r + s
-        for r, s in zip(hourly["rain"], hourly["showers"], strict=True)
-    )
-    snow = tuple(None if v is None else v * snow_factor for v in hourly["snowfall"])
-    return HourlySeries(
-        start=int(hourly["time"][0]),
-        wind_mph=tuple(hourly["wind_speed_10m"]),
-        rain_in=rain,
-        snow_in=snow,
-    )
-
-
-class OpenMeteoClient:
-    def __init__(self, http: httpx.Client | None = None) -> None:
-        self.http = http
-        self.model = settings.OPEN_METEO_MODEL
-        self.url = settings.OPEN_METEO_URL
-
-    def fetch(
-        self, locations: Iterable[LatLon], start: int, end: int
-    ) -> dict[LatLon, HourlySeries | None]:
-        """Hourly series covering [start, end] for each location. A location whose request
-        failed maps to None, which the risk logic treats as unknown, never as Low."""
-        unique = list(dict.fromkeys(locations))
-        keys = {loc: _cache_key(self.model, loc, start, end) for loc in unique}
-        cached = cache.get_many(list(keys.values()))  # one MGET on Redis
-        result: dict[LatLon, HourlySeries | None] = {}
-        missing = []
-        for loc in unique:
-            hit = cached.get(keys[loc])
-            if hit is None:
-                missing.append(loc)
-            else:
-                result[loc] = HourlySeries.from_dict(hit)
-        if not missing:
-            return result
-
-        budget.consume("open_meteo", len(missing))
-        batches = [missing[i : i + BATCH_SIZE] for i in range(0, len(missing), BATCH_SIZE)]
-        with ThreadPoolExecutor(max_workers=min(WORKERS, len(batches))) as pool:
-            fetched = pool.map(lambda batch: self._fetch_batch(batch, start, end), batches)
-            for batch, series in zip(batches, fetched, strict=True):
-                result.update(zip(batch, series, strict=True))
-
-        fresh = {
-            keys[loc]: found.to_dict() for loc in missing if (found := result[loc]) is not None
-        }
-        if fresh:
-            cache.set_many(fresh, timeout=settings.WEATHER_TTL_S)
-        return result
-
-    def _fetch_batch(self, batch: list[LatLon], start: int, end: int) -> list[HourlySeries | None]:
-        params = {
-            "latitude": ",".join(f"{lat:.4f}" for lat, _ in batch),
-            "longitude": ",".join(f"{lon:.4f}" for _, lon in batch),
+def forecast_request(locations: Sequence[LatLon], start: int, end: int) -> dict[str, Any]:
+    """Everything the browser needs to fetch forecasts for `locations` over [start, end]."""
+    return {
+        "url": settings.OPEN_METEO_URL,
+        "params": {
             "hourly": HOURLY,
-            "models": self.model,
+            "models": settings.OPEN_METEO_MODEL,
             "wind_speed_unit": "mph",
             "precipitation_unit": "inch",
             "timeformat": "unixtime",
             "timezone": "GMT",
             "start_hour": _iso_hour(start),
             "end_hour": _iso_hour(end),
-        }
-        try:
-            response = request("GET", self.url, params=params, http=self.http)
-        except httpx.HTTPError as exc:
-            log.warning("Open-Meteo request failed: %s", exc)
-            return [None] * len(batch)
-        if response.status_code != 200:
-            log.warning("Open-Meteo returned %s: %s", response.status_code, response.text[:200])
-            return [None] * len(batch)
-        data = response.json()
-        items = data if isinstance(data, list) else [data]
-        if len(items) != len(batch):
-            log.warning("Open-Meteo returned %d locations for %d requested", len(items), len(batch))
-            return [None] * len(batch)
-        return [parse_series(item) for item in items]
+        },
+        "batch_size": BATCH_SIZE,
+        "locations": [[lat, lon] for lat, lon in locations],
+    }
+
+
+def _values(hourly: dict[str, Any], key: str, length: int) -> tuple[float | None, ...]:
+    values = hourly.get(key)
+    if not isinstance(values, list) or len(values) != length:
+        raise InvalidForecast(f"Forecast field {key!r} is missing or has the wrong length.")
+    if not all(
+        v is None or (isinstance(v, int | float) and not isinstance(v, bool)) for v in values
+    ):
+        raise InvalidForecast(f"Forecast field {key!r} must contain numbers.")
+    return tuple(None if v is None else float(v) for v in values)
+
+
+def parse_series(item: dict[str, Any]) -> HourlySeries:
+    """One location's Open-Meteo response. Units are checked rather than assumed: snowfall in cm
+    is converted, anything else unexpected is rejected rather than silently skewing results."""
+    if not isinstance(item, dict) or not isinstance(item.get("hourly"), dict):
+        raise InvalidForecast("Each forecast must be an Open-Meteo location object.")
+    units = item.get("hourly_units") or {}
+    snow_factor = 1.0
+    for variable, expected in EXPECTED_UNITS.items():
+        unit = units.get(variable)
+        if variable == "snowfall" and unit == "cm":
+            snow_factor = 1 / CM_PER_INCH
+        elif unit != expected:
+            raise InvalidForecast(f"Forecast {variable} is in {unit!r}, expected {expected!r}.")
+    hourly = item["hourly"]
+    times = hourly.get("time")
+    if not isinstance(times, list) or not times or not all(isinstance(t, int) for t in times):
+        raise InvalidForecast("Forecast times must be unix timestamps.")
+    if any(b - a != HOUR for a, b in pairwise(times)):
+        raise InvalidForecast("Forecast times must be hourly.")
+    n = len(times)
+    rain, showers = _values(hourly, "rain", n), _values(hourly, "showers", n)
+    snow = _values(hourly, "snowfall", n)
+    return HourlySeries(
+        start=times[0],
+        wind_mph=_values(hourly, "wind_speed_10m", n),
+        rain_in=tuple(
+            None if r is None or s is None else r + s for r, s in zip(rain, showers, strict=True)
+        ),
+        snow_in=tuple(None if v is None else v * snow_factor for v in snow),
+    )
+
+
+def series_for(
+    locations: Sequence[LatLon], forecasts: Sequence[dict[str, Any] | None]
+) -> dict[LatLon, HourlySeries | None]:
+    """Match relayed forecasts to the requested locations, in order. A missing (null) forecast,
+    or one for a different place, maps to None: unknown weather, never treated as Low."""
+    if len(forecasts) != len(locations):
+        raise InvalidForecast(
+            f"Expected one forecast per requested location ({len(locations)}), "
+            f"got {len(forecasts)}."
+        )
+    result: dict[LatLon, HourlySeries | None] = {}
+    for (lat, lon), item in zip(locations, forecasts, strict=True):
+        if item is None:
+            result[(lat, lon)] = None
+            continue
+        series = parse_series(item)
+        got_lat, got_lon = item.get("latitude"), item.get("longitude")
+        drifted = (
+            isinstance(got_lat, int | float)
+            and isinstance(got_lon, int | float)
+            and (
+                abs(got_lat - lat) > MAX_LOCATION_DRIFT_DEG
+                or abs(got_lon - lon) > MAX_LOCATION_DRIFT_DEG
+            )
+        )
+        result[(lat, lon)] = None if drifted else series
+    return result

@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { fetchForecasts } from '../lib/openMeteo';
 import { api } from './client';
 import type { Interval } from './types';
 
@@ -47,7 +48,13 @@ export function useCreateRouteSet() {
 export function useAssessment(routeSetId: string | undefined, interval: Interval) {
   return useQuery({
     queryKey: ['assessment', routeSetId, interval],
-    queryFn: ({ signal }) => api.assessment(routeSetId!, interval, signal),
+    // 1) ask the server which forecasts it needs, 2) fetch them from Open-Meteo in the browser,
+    // 3) let the server score the routes.
+    queryFn: async ({ signal }) => {
+      const request = await api.assessmentForecastRequest(routeSetId!, interval, signal);
+      const forecasts = await fetchForecasts(request.forecast, signal);
+      return api.assess(routeSetId!, interval, forecasts, signal);
+    },
     enabled: Boolean(routeSetId),
     staleTime: 10 * MINUTE,
     // While switching interval, keep showing the previous result for the same route set.
@@ -59,7 +66,11 @@ export function useAssessment(routeSetId: string | undefined, interval: Interval
 export function useHeatmap(routeSetId: string | undefined) {
   return useQuery({
     queryKey: ['heatmap', routeSetId],
-    queryFn: ({ signal }) => api.heatmap(routeSetId!, signal),
+    queryFn: async ({ signal }) => {
+      const request = await api.heatmapForecastRequest(routeSetId!, signal);
+      const forecasts = await fetchForecasts(request.forecast, signal);
+      return api.heatmap(routeSetId!, request.start_utc, forecasts, signal);
+    },
     enabled: Boolean(routeSetId),
     staleTime: 15 * MINUTE,
   });

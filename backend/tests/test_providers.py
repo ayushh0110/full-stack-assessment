@@ -9,9 +9,14 @@ from trips.domain.alternatives import Rect
 from trips.domain.timeutil import HOUR
 from trips.exceptions import QuotaExhausted, UpstreamError
 from trips.providers import budget, osrm, photon, tomtom
-from trips.providers.openmeteo import OpenMeteoClient, parse_series, snap
+from trips.providers.openmeteo import (
+    InvalidForecast,
+    forecast_request,
+    parse_series,
+    series_for,
+    snap,
+)
 
-OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
 START = 1_792_886_400
 UNITS = {
     "time": "unixtime",
@@ -22,8 +27,10 @@ UNITS = {
 }
 
 
-def location(wind, rain, showers, snow, units=UNITS):
+def location(wind, rain, showers, snow, units=UNITS, lat=40.0, lon=-100.0):
     return {
+        "latitude": lat,
+        "longitude": lon,
         "hourly_units": units,
         "hourly": {
             "time": [START + k * HOUR for k in range(len(wind))],
@@ -35,7 +42,7 @@ def location(wind, rain, showers, snow, units=UNITS):
     }
 
 
-# --- Open-Meteo ------------------------------------------------------------------
+# --- Open-Meteo (fetched by the browser, validated here) --------------------------
 
 
 def test_series_combines_rain_and_showers():
@@ -51,42 +58,48 @@ def test_snowfall_in_cm_is_converted():
     assert series.snow_in == pytest.approx((1.0,))
 
 
-def test_unexpected_units_are_an_error():
-    with pytest.raises(UpstreamError):
-        parse_series(location([5], [0], [0], [0], {**UNITS, "wind_speed_10m": "km/h"}))
+@pytest.mark.parametrize(
+    "bad",
+    [
+        location([5], [0], [0], [0], {**UNITS, "wind_speed_10m": "km/h"}),  # wrong unit
+        {**location([5], [0], [0], [0]), "hourly": {"time": [START]}},  # missing fields
+        location([5, 6], [0], [0, 0], [0, 0]),  # ragged arrays
+        location(["5"], [0], [0], [0]),  # not numbers
+        {"hourly": "nope"},
+    ],
+)
+def test_malformed_forecasts_are_rejected(bad):
+    with pytest.raises(InvalidForecast):
+        parse_series(bad)
 
 
-@respx.mock
-def test_fetch_batches_and_caches():
-    route = respx.get(OPEN_METEO).mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                location([5, 6], [0, 0], [0, 0], [0, 0]),
-                location([9, 9], [0, 0], [0, 0], [0, 0]),
-            ],
-        )
+def test_forecasts_are_matched_to_requested_locations():
+    a, b, c = (40.0, -100.0), (41.0, -100.0), (42.0, -100.0)
+    result = series_for(
+        [a, b, c],
+        [
+            location([5], [0], [0], [0]),
+            None,  # the browser couldn't fetch this one
+            location([9], [0], [0], [0], lat=45.0),  # Open-Meteo answered for a different place
+        ],
     )
-    client = OpenMeteoClient()
-    a, b = (40.0, -100.0), (41.0, -100.0)
-    first = client.fetch([a, b, a], START, START + HOUR)
-    assert first[a].wind_mph == (5, 6) and first[b].wind_mph == (9, 9)
-    assert route.call_count == 1
-    params = route.calls[0].request.url.params
-    assert params["latitude"] == "40.0000,41.0000"
-    assert params["models"] == "gfs_seamless"
-    assert params["precipitation_unit"] == "inch"
-
-    again = client.fetch([b, a], START, START + HOUR)
-    assert again == first and route.call_count == 1  # served from the cache
-    assert budget.usage()["open_meteo"]["used"] == 2
+    assert result[a].wind_mph == (5.0,)
+    assert result[b] is None and result[c] is None
 
 
-@respx.mock
-def test_failed_batch_becomes_unknown_not_low():
-    respx.get(OPEN_METEO).mock(return_value=httpx.Response(500))
-    result = OpenMeteoClient().fetch([(40.0, -100.0)], START, START + HOUR)
-    assert result == {(40.0, -100.0): None}
+def test_one_forecast_per_location_is_required():
+    with pytest.raises(InvalidForecast):
+        series_for([(40.0, -100.0)], [])
+
+
+def test_forecast_request_describes_the_fetch(settings):
+    request = forecast_request([(40.0, -100.0)], START, START + 2 * HOUR)
+    assert request["url"] == settings.OPEN_METEO_URL
+    assert request["locations"] == [[40.0, -100.0]]
+    assert request["params"]["models"] == "gfs_seamless"
+    assert request["params"]["precipitation_unit"] == "inch"
+    assert request["params"]["start_hour"] == "2026-10-25T00:00"
+    assert request["params"]["end_hour"] == "2026-10-25T02:00"
 
 
 def test_snap_to_lattice():

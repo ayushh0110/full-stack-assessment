@@ -1,4 +1,13 @@
-import type { Assessment, Heatmap, Interval, Place, RouteSet, TripInput } from './types';
+import type {
+  Assessment,
+  AssessmentForecastRequest,
+  Heatmap,
+  HeatmapForecastRequest,
+  Interval,
+  Place,
+  RouteSet,
+  TripInput,
+} from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -64,8 +73,23 @@ export const api = {
     request<Place[]>(`/geocode?q=${encodeURIComponent(query)}`, { signal }),
   createRouteSet: (input: TripInput) =>
     request<RouteSet>('/route-sets', { method: 'POST', body: JSON.stringify(input) }),
-  assessment: (id: string, interval: Interval, signal?: AbortSignal) =>
-    request<Assessment>(`/route-sets/${id}/assessment?interval_mi=${interval}`, { signal }),
-  heatmap: (id: string, signal?: AbortSignal) =>
-    request<Heatmap>(`/route-sets/${id}/heatmap`, { signal }),
+  assessmentForecastRequest: (id: string, interval: Interval, signal?: AbortSignal) =>
+    request<AssessmentForecastRequest>(
+      `/route-sets/${id}/assessment/forecast-request?interval_mi=${interval}`,
+      { signal },
+    ),
+  assess: (id: string, interval: Interval, forecasts: unknown[], signal?: AbortSignal) =>
+    request<Assessment>(`/route-sets/${id}/assessment`, {
+      method: 'POST',
+      body: JSON.stringify({ interval_mi: interval, forecasts }),
+      signal,
+    }),
+  heatmapForecastRequest: (id: string, signal?: AbortSignal) =>
+    request<HeatmapForecastRequest>(`/route-sets/${id}/heatmap/forecast-request`, { signal }),
+  heatmap: (id: string, startUtc: string, forecasts: unknown[], signal?: AbortSignal) =>
+    request<Heatmap>(`/route-sets/${id}/heatmap`, {
+      method: 'POST',
+      body: JSON.stringify({ start_utc: startUtc, forecasts }),
+      signal,
+    }),
 };

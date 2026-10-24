@@ -11,7 +11,9 @@ from trips.providers import budget
 from trips.providers.photon import PhotonGeocoder
 from trips.serializers import (
     AssessmentQuerySerializer,
+    AssessmentRequestSerializer,
     GeocodeQuerySerializer,
+    HeatmapRequestSerializer,
     RouteSetRequestSerializer,
 )
 
@@ -61,17 +63,42 @@ class RouteSetCreateView(APIView):
         return Response(services.route_set_response(route_set), status=status.HTTP_201_CREATED)
 
 
-class AssessmentView(APIView):
+class AssessmentForecastRequestView(APIView):
+    """Step 1: which forecasts the browser should fetch for this route set and interval."""
+
     throttle_scope = "reads"
 
     def get(self, request: Request, rs_id: str) -> Response:
         query = AssessmentQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
-        return Response(services.assess(rs_id, query.validated_data["interval_mi"]))
+        interval = query.validated_data["interval_mi"]
+        return Response(services.assessment_forecast_request(rs_id, interval))
+
+
+class AssessmentView(APIView):
+    """Step 2: score the routes from the forecasts the browser fetched."""
+
+    throttle_scope = "reads"
+
+    def post(self, request: Request, rs_id: str) -> Response:
+        body = AssessmentRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        return Response(services.assess(rs_id, data["interval_mi"], data["forecasts"]))
+
+
+class HeatmapForecastRequestView(APIView):
+    throttle_scope = "reads"
+
+    def get(self, request: Request, rs_id: str) -> Response:
+        return Response(services.heatmap_forecast_request(rs_id))
 
 
 class HeatmapView(APIView):
     throttle_scope = "reads"
 
-    def get(self, request: Request, rs_id: str) -> Response:
-        return Response(services.heatmap(rs_id))
+    def post(self, request: Request, rs_id: str) -> Response:
+        body = HeatmapRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        return Response(services.heatmap(rs_id, data["start_utc"], data["forecasts"]))

@@ -525,4 +525,6 @@ Verdicts on the external review, checked against the TomTom, Open-Meteo and MapL
 | TomTom only | TomTom, with an OSRM car-routing fallback when no key is set | The app can be run and evaluated without signing up. The UI marks it as development routing |
 | `react-map-gl` | MapLibre GL used directly | Imperative control over sources, filters and paint, which keeps slider updates outside React rendering |
 | Google Cloud Run + Upstash Redis | Render free web service from `render.yaml`, in-memory cache | No billing account needed. One instance doesn't need a shared cache |
+| Server fetches Open-Meteo, cached in Redis | The server says what to fetch, the visitor's browser fetches it, the server validates and scores it | On Render's free plan, Open-Meteo's per-IP daily limit was already used up by other apps on the shared IP (HTTP 429). Fetching from the browser uses each visitor's own quota. All logic stays on the server |
+| Third route: avoid the middle of the fastest route | Avoid the middle of every route found so far | For Denver → Chicago, the detour around I-80 just rediscovered I-70 (route B) and was rightly rejected as a duplicate |
 | Mobile bottom sheet | Stacked layout (map above the panel) | Cut-list item. A compact legend and a two-line slider header keep phones usable |
