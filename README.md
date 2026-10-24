@@ -6,7 +6,9 @@ A React + Django app that helps a truck driver pick the safest route. It compare
 - **Backend:** Python 3.12, Django 5, Django REST Framework, Redis cache, shapely, numpy
 - **Services:** TomTom Routing API (truck mode), Open-Meteo forecast API, Photon place search, OpenFreeMap basemap
 
-> **Note on the live demo:** it runs on Render's free plan, which puts the server to sleep after 15 minutes without visitors. If the page is slow to open, the server is waking up. That takes about a minute, and everything is fast after that.
+**Live demo:** https://truck-weather-routing-ewdo.onrender.com
+
+> It runs on Render's free plan, which puts the server to sleep after 15 minutes without visitors. If the page is slow to open, the server is waking up. That takes about a minute, and everything is fast after that.
 
 ## Run it
 
