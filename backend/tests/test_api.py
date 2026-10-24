@@ -172,6 +172,34 @@ def test_fallback_avoids_every_existing_route(api, monkeypatch):
     assert body["notes"] == []
 
 
+class TooSlowThirdRouting(TwoRouteRouting):
+    """Two routes; the only way around both takes twice as long."""
+
+    def routes(self, origin, destination, depart_at, gross_lb, *, max_alternatives=2, avoid=()):
+        raws = FakeRouting.routes(self, origin, destination, depart_at, gross_lb)
+        if not avoid:
+            return raws[:2]
+        third = straight_track(200, n=201, speed_mph=25, lon_offset_mi=40)
+        return [
+            RawRoute(
+                points=third.points,
+                length_m=third.total_mi * METERS_PER_MILE,
+                duration_s=third.duration_s,
+                progress=list(enumerate(third.elapsed_s.tolist())),
+            )
+        ]
+
+
+def test_missing_third_route_is_explained(api, monkeypatch):
+    monkeypatch.setattr(services, "routing_provider", lambda: TooSlowThirdRouting())
+    body = create(api).json()
+    assert [r["id"] for r in body["routes"]] == ["A", "B"]
+    assert body["notes"] == [
+        "The routing service found 2 distinct routes for this trip. A third isn't shown "
+        "because the best other route is 100% longer than the fastest."
+    ]
+
+
 class SlowThirdRouting(FakeRouting):
     def routes(self, origin, destination, depart_at, gross_lb, *, max_alternatives=2, avoid=()):
         raws = []

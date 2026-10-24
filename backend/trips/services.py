@@ -154,18 +154,31 @@ def _fetch_routes(
         except (UpstreamError, QuotaExhausted) as exc:
             log.info("Fallback route request failed: %s", exc)
             candidates = []
+        why_not = "no other road connects them without reusing these routes"
         for raw in candidates:
             candidate = _to_route(raw)
-            reason = rejection_reason(candidate.track, [r.track for r in routes])
+            existing = [r.track for r in routes]
+            reason = rejection_reason(candidate.track, existing)
             if reason is None and len(routes) < 3:
                 routes.append(candidate)
-            else:
-                log.info("Fallback route rejected: %s", reason)
+            elif reason is not None:
+                fastest = min(existing, key=lambda t: t.duration_s)
+                pct = round((detour_ratio(candidate.track, fastest) - 1) * 100)
+                if reason.startswith("too"):
+                    why_not = f"the best other route is {pct}% longer than the fastest"
+                elif reason.startswith("not distinct"):
+                    why_not = "the best other route mostly repeats these"
+                else:
+                    why_not = f"the best other route {reason}"
+                log.info("Fallback route rejected: %s (%s%% longer)", reason, pct)
 
     notes = []
     if len(routes) < 3:
         plural = "route" if len(routes) == 1 else "routes"
-        notes.append(f"The routing service found {len(routes)} distinct {plural} for this trip.")
+        note = f"The routing service found {len(routes)} distinct {plural} for this trip."
+        if provider.supports_avoid_areas:
+            note += f" A third isn't shown because {why_not}."
+        notes.append(note)
     if not provider.truck_aware:
         notes.append(
             "Development routing: no TomTom key is configured, so routes come from OSRM car "
