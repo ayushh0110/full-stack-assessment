@@ -1,4 +1,6 @@
+import HourglassTop from '@mui/icons-material/HourglassTop';
 import { Alert, Box, Button, LinearProgress, Skeleton, Stack, Typography } from '@mui/material';
+import { useWeatherRetryIn } from '../api/hooks';
 import type { Assessment, RouteSet } from '../api/types';
 import { formatLoad } from '../lib/format';
 import { useAppStore } from '../store';
@@ -30,6 +32,7 @@ export function ResultsPanel({
   const selectedRouteId = useAppStore((s) => s.selectedRouteId);
   const selectRoute = useAppStore((s) => s.selectRoute);
   const interval = useAppStore((s) => s.interval);
+  const retryIn = useWeatherRetryIn();
 
   if (planError) {
     return <Alert severity="error">{planError}</Alert>;
@@ -67,6 +70,12 @@ export function ResultsPanel({
           </Typography>
         )}
       </Box>
+
+      {retryIn > 0 && (
+        <Alert severity="info" variant="outlined" icon={<HourglassTop fontSize="inherit" />}>
+          Weather service rate limit reached. Retrying in {retryIn} s…
+        </Alert>
+      )}
 
       {assessError && (
         <Alert

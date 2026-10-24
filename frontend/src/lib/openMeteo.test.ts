@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ForecastRequest, LatLon } from '../api/types';
-import { clearForecastCache, fetchForecasts } from './openMeteo';
+import { resetForecastState, fetchForecasts } from './openMeteo';
 
 const item = (lat: number, lon: number) => ({
   latitude: lat,
@@ -36,8 +36,11 @@ function openMeteoFetch(failLatitude?: number) {
 }
 
 describe('fetchForecasts', () => {
-  beforeEach(() => clearForecastCache());
-  afterEach(() => vi.unstubAllGlobals());
+  beforeEach(() => resetForecastState());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it('fetches in batches and keeps the requested order', async () => {
     const fetchMock = openMeteoFetch();
@@ -79,5 +82,38 @@ describe('fetchForecasts', () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get('latitude')).toBe('41');
+  });
+
+  it('waits out the per-minute limit, then retries', async () => {
+    vi.useFakeTimers();
+    const start = Date.now();
+    const limited = { error: true, reason: 'Minutely API request limit exceeded.' };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(limited), { status: 429 }))
+      .mockResolvedValue(new Response(JSON.stringify(item(40, -100))));
+    vi.stubGlobal('fetch', fetchMock);
+    const onPause = vi.fn();
+
+    const pending = fetchForecasts(request([[40, -100]]), undefined, onPause);
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // still waiting
+    await vi.advanceTimersByTimeAsync(2_000);
+    const result = await pending;
+
+    expect(onPause).toHaveBeenCalledWith(start + 62_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result[0]?.latitude).toBe(40);
+  });
+
+  it('does not wait on an hourly or daily limit', async () => {
+    const limited = { error: true, reason: 'Daily API request limit exceeded.' };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(limited), { status: 429 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const onPause = vi.fn();
+    const result = await fetchForecasts(request([[40, -100]]), undefined, onPause);
+    expect(result).toEqual([null]);
+    expect(onPause).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

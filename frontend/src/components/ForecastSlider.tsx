@@ -3,6 +3,7 @@ import PlayArrow from '@mui/icons-material/PlayArrow';
 import { Box, IconButton, LinearProgress, Paper, Slider, Stack, Typography } from '@mui/material';
 import { useEffect } from 'react';
 import type { Assessment, RouteSet } from '../api/types';
+import { useWeatherRetryIn } from '../api/hooks';
 import { formatTime } from '../lib/format';
 import { useAppStore } from '../store';
 
@@ -55,6 +56,7 @@ export function ForecastSlider({ startMs, tz, routeSet, assessment, loading, err
   const playing = useAppStore((s) => s.playing);
   const setPlaying = useAppStore((s) => s.setPlaying);
   const selectedRouteId = useAppStore((s) => s.selectedRouteId);
+  const retryIn = useWeatherRetryIn();
 
   useEffect(() => {
     if (!playing) return;
@@ -71,7 +73,9 @@ export function ForecastSlider({ startMs, tz, routeSet, assessment, loading, err
   const status = error
     ? error
     : loading
-      ? 'Loading the forecast grid…'
+      ? retryIn > 0
+        ? `Weather rate limit reached, retrying in ${retryIn} s…`
+        : 'Loading the forecast grid…'
       : routeSet
         ? truckStatus(timeMs, routeSet, selectedRouteId, assessment)
         : 'Plan a trip to see the weather along it';

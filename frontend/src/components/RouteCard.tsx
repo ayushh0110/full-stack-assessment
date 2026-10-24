@@ -105,7 +105,7 @@ export function RouteCard({
             <Typography variant="caption" color="text.secondary" noWrap component="div">
               {formatMiles(route.distance_mi)} · {formatDuration(route.duration_s)}
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap component="div">
+            <Typography variant="caption" color="text.secondary" component="div">
               Arrives {formatTime(route.arrival_utc, arrivalTz)}
             </Typography>
           </Box>

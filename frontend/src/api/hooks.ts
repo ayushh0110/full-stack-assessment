@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { fetchForecasts } from '../lib/openMeteo';
+import { useAppStore } from '../store';
 import { api } from './client';
 import type { Interval } from './types';
 
@@ -30,6 +31,28 @@ export function useSlow(active: boolean, delayMs = 6000): boolean {
   return active && slow;
 }
 
+/** Whole seconds left until `untilMs`, ticking once a second; 0 once it has passed. */
+export function useCountdown(untilMs: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!untilMs) return;
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= untilMs) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [untilMs]);
+  return untilMs ? Math.max(0, Math.ceil((untilMs - now) / 1000)) : 0;
+}
+
+/** Seconds until forecasts are retried after hitting Open-Meteo's rate limit; 0 if not waiting. */
+export function useWeatherRetryIn(): number {
+  return useCountdown(useAppStore((s) => s.weatherRetryAt));
+}
+
+const onPause = (retryAt: number) => useAppStore.getState().setWeatherRetryAt(retryAt);
+
 export function usePlaceSearch(query: string) {
   const debounced = useDebounced(query.trim(), 300);
   return useQuery({
@@ -52,7 +75,7 @@ export function useAssessment(routeSetId: string | undefined, interval: Interval
     // 3) let the server score the routes.
     queryFn: async ({ signal }) => {
       const request = await api.assessmentForecastRequest(routeSetId!, interval, signal);
-      const forecasts = await fetchForecasts(request.forecast, signal);
+      const forecasts = await fetchForecasts(request.forecast, signal, onPause);
       return api.assess(routeSetId!, interval, forecasts, signal);
     },
     enabled: Boolean(routeSetId),
@@ -68,7 +91,7 @@ export function useHeatmap(routeSetId: string | undefined) {
     queryKey: ['heatmap', routeSetId],
     queryFn: async ({ signal }) => {
       const request = await api.heatmapForecastRequest(routeSetId!, signal);
-      const forecasts = await fetchForecasts(request.forecast, signal);
+      const forecasts = await fetchForecasts(request.forecast, signal, onPause);
       return api.heatmap(routeSetId!, request.start_utc, forecasts, signal);
     },
     enabled: Boolean(routeSetId),
