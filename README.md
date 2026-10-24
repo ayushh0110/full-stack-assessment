@@ -152,15 +152,15 @@ Without a key, the app falls back to the public OSRM server so it can be run and
 
 Free tiers: TomTom Routing 20,000 requests/month; Open-Meteo 10,000 calls/day for non-commercial use. Redis caches place searches (24 h), route sets (1 h) and forecasts (1 h). Daily counters stop each provider before its limit (settings in `.env.example`). When a budget is used up, the API returns 503 with a clear message, and cached results keep working.
 
-## Deploying (Google Cloud Run)
+## Deploying (Render)
 
-The Dockerfile builds the frontend and serves it from Django (WhiteNoise), so one Cloud Run service hosts the whole app on one origin.
+The Dockerfile builds the frontend and serves it from Django (WhiteNoise), so one service hosts the whole app on one origin. `render.yaml` describes that service.
 
-```bash
-gcloud run deploy truck-weather-routing --source . --region us-central1 --allow-unauthenticated --set-env-vars "ALLOWED_HOSTS=.run.app,NUM_PROXIES=1,REDIS_URL=rediss://...,TOMTOM_API_KEY=...,DJANGO_SECRET_KEY=..."
-```
+1. In Render, choose **New → Blueprint** and select this repository.
+2. Enter `TOMTOM_API_KEY` when asked. `DJANGO_SECRET_KEY` is generated for you.
+3. Render builds the image and redeploys on every push to `main`.
 
-Any Redis works for `REDIS_URL` (for example Upstash's free tier). The same image runs on Render or any other container host.
+On the free plan the service sleeps after 15 minutes without traffic, and the first request afterwards takes about a minute. Without `REDIS_URL` the app uses an in-memory cache, which is fine for a single instance. To share the cache across restarts, add a Render Key Value instance and set `REDIS_URL`. The same image also runs on Cloud Run or any other container host.
 
 ## Project layout
 

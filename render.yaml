@@ -1,0 +1,16 @@
+# Render Blueprint: New → Blueprint → select this repository.
+# One free web service built from the Dockerfile; it serves the React app and the API.
+services:
+  - type: web
+    name: truck-weather-routing
+    runtime: docker
+    plan: free
+    branch: main
+    autoDeploy: true
+    envVars:
+      - key: TOMTOM_API_KEY
+        sync: false # entered in the Render dashboard, never committed
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: NUM_PROXIES
+        value: "1"
