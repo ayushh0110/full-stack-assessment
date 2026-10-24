@@ -3,7 +3,7 @@
 A React + Django app that helps a truck driver pick the safest route. It compares three truck routes, checks the weather forecast at each checkpoint for the time the truck will actually be there, scores the risk with the given risk and load rules, and recommends a route. Everything is shown on a map, with a 0–48 hour weather heatmap over the trip corridor.
 
 - **Frontend:** React 19, TypeScript, Material UI 7 (with MUI X Date Pickers), MapLibre GL, TanStack Query, Zustand
-- **Backend:** Python 3.12, Django 5, Django REST Framework, Redis cache, shapely, numpy
+- **Backend:** Python 3.12, Django 5, Django REST Framework, shapely, numpy; Redis cache when configured (in-memory otherwise)
 - **Services:** TomTom Routing API (truck mode), Open-Meteo forecast API, Photon place search, OpenFreeMap basemap
 
 **Live demo:** https://truck-weather-routing-ewdo.onrender.com
@@ -35,7 +35,7 @@ npm install
 npm run dev                                          # http://localhost:5173, proxies /api to :8000
 ```
 
-Copy `.env.example` to `.env` in the repository root to set keys. Without `REDIS_URL` the backend uses an in-memory cache.
+Copy `.env.example` to `.env` in the repository root to set keys. Without `REDIS_URL` the backend uses an in-memory cache, which is what the live demo runs on; `docker compose` adds Redis.
 
 ### Tests and checks
 
@@ -53,11 +53,11 @@ flowchart LR
   B[Browser<br/>React + MUI + MapLibre] -- same origin --> W[Django + DRF<br/>serves SPA + /api/v1]
   W --> TT[TomTom<br/>truck routing]
   W --> PH[Photon<br/>place search]
-  W <--> R[(Redis<br/>route sets · quotas)]
+  W <--> R[(Cache: Redis or in-memory<br/>route sets · place searches · quotas)]
   B -- raw forecasts, relayed to the server --> OM[Open-Meteo<br/>hourly forecast]
 ```
 
-1. **`POST /api/v1/route-sets`** converts the departure (entered as local time at the origin) to UTC, fetches up to three truck routes, and stores them in Redis for an hour. The map draws the routes as soon as this returns.
+1. **`POST /api/v1/route-sets`** converts the departure (entered as local time at the origin) to UTC, fetches up to three truck routes, and caches them for an hour. The map draws the routes as soon as this returns.
 2. For the assessment, the server places checkpoints, works out each one's ETA, and says which forecasts it needs (**`GET …/assessment/forecast-request`**). The browser fetches those from Open-Meteo and posts them back (**`POST …/assessment`**). The server checks them, reads each checkpoint's weather at its ETA, scores risk and picks the recommendation.
 3. The heatmap works the same way, at the same time: the corridor grid comes from the server, the browser fetches forecast hours 0–48, and the server returns the risk for every cell and hour.
 4. Switching between 10, 25 and 50 miles only repeats the assessment. The routes are reused, and forecasts already fetched in this session aren't fetched again.
@@ -166,7 +166,7 @@ Without a key, the app falls back to the public OSRM server so it can be run and
 
 ## Quotas
 
-Free tiers: TomTom Routing 20,000 requests/month; Open-Meteo 10,000 calls/day per IP for non-commercial use, which each visitor's browser uses for their own forecasts. Redis caches place searches (24 h) and route sets (1 h). Daily counters stop the routing and place-search providers before their limits (settings in `.env.example`). When a budget is used up, the API returns 503 with a clear message, and cached results keep working.
+Free tiers: TomTom Routing 20,000 requests/month; Open-Meteo 10,000 calls/day per IP for non-commercial use, which each visitor's browser uses for their own forecasts. The cache keeps place searches (24 h) and route sets (1 h). Daily counters stop the routing and place-search providers before their limits (settings in `.env.example`). When a budget is used up, the API returns 503 with a clear message, and cached results keep working.
 
 ## Deploying (Render)
 
