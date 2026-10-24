@@ -86,7 +86,7 @@ export function App() {
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ px: 3, pt: 3, pb: 2.5 }}>
+        <Box sx={{ px: { xs: 2, sm: 3 }, pt: 3, pb: 2.5 }}>
           <Stack direction="row" spacing={1.25} alignItems="center" mb={0.5}>
             <LocalShippingOutlined color="primary" />
             <Typography variant="h1">Truck Weather Routing</Typography>
@@ -96,13 +96,13 @@ export function App() {
           </Typography>
         </Box>
         <Divider />
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: { xs: 2, sm: 3 } }}>
           <TripForm onSubmit={submit} submitting={plan.isPending} serverErrors={fieldErrors} />
         </Box>
         {(routeSet || plan.isPending || planError) && (
           <>
             <Divider />
-            <Box sx={{ p: 3 }}>
+            <Box sx={{ p: { xs: 2, sm: 3 } }}>
               <ResultsPanel
                 routeSet={routeSet}
                 planning={plan.isPending}
@@ -116,7 +116,12 @@ export function App() {
             </Box>
           </>
         )}
-        <Typography variant="caption" color="text.secondary" component="p" sx={{ px: 3, pb: 3 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          component="p"
+          sx={{ px: { xs: 2, sm: 3 }, pb: 3 }}
+        >
           Weather: Open-Meteo (NOAA GFS/HRRR). Routing:{' '}
           {routeSet?.truck_aware === false ? 'OSRM (development)' : 'TomTom truck routing'}. Risk
           miles are attributed from checkpoint samples.

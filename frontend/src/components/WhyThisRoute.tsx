@@ -3,6 +3,7 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Box,
   Table,
   TableBody,
   TableCell,
@@ -39,49 +40,57 @@ export function WhyThisRoute({
           ranked in order: fewest Severe miles, fewest High miles, lowest risk index (average level,
           0 Low – 4 No Travel), then shortest travel time.
         </Typography>
-        <Table size="small" aria-label="Route comparison">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ pl: 0 }}>Criterion</TableCell>
-              {routeIds.map((id) => (
-                <TableCell key={id} align="right" sx={{ fontWeight: id === pick ? 700 : 500 }}>
-                  {id}
-                </TableCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {recommendation.comparison.map((row) => (
-              <TableRow
-                key={row.criterion}
-                sx={row.decisive ? { bgcolor: 'rgba(36, 83, 199, 0.08)' } : undefined}
-              >
-                <TableCell sx={{ pl: row.decisive ? 1 : 0 }}>
-                  <Typography variant="body2" fontWeight={row.decisive ? 700 : 400}>
-                    {row.label}
-                  </Typography>
-                  {(row.decisive || ELIGIBILITY.has(row.criterion)) && (
-                    <Typography
-                      variant="caption"
-                      color={row.decisive ? 'primary' : 'text.secondary'}
-                    >
-                      {row.decisive ? 'Deciding factor' : 'Eligibility'}
-                    </Typography>
-                  )}
-                </TableCell>
+        {/* Tight, even cell padding keeps three route columns inside a phone-width card; the
+            wrapper scrolls rather than overflowing if a narrow screen still can't fit them. */}
+        <Box sx={{ overflowX: 'auto', mx: -1 }}>
+          <Table
+            size="small"
+            aria-label="Route comparison"
+            sx={{ '& .MuiTableCell-root': { px: 0.75 } }}
+          >
+            <TableHead>
+              <TableRow>
+                <TableCell>Criterion</TableCell>
                 {routeIds.map((id) => (
-                  <TableCell
-                    key={id}
-                    align="right"
-                    sx={{ fontWeight: id === pick ? 600 : 400, whiteSpace: 'nowrap' }}
-                  >
-                    {formatCriterion(row.criterion, row.values[id] ?? null)}
+                  <TableCell key={id} align="right" sx={{ fontWeight: id === pick ? 700 : 500 }}>
+                    {id}
                   </TableCell>
                 ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {recommendation.comparison.map((row) => (
+                <TableRow
+                  key={row.criterion}
+                  sx={row.decisive ? { bgcolor: 'rgba(36, 83, 199, 0.08)' } : undefined}
+                >
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={row.decisive ? 700 : 400}>
+                      {row.label}
+                    </Typography>
+                    {(row.decisive || ELIGIBILITY.has(row.criterion)) && (
+                      <Typography
+                        variant="caption"
+                        color={row.decisive ? 'primary' : 'text.secondary'}
+                      >
+                        {row.decisive ? 'Deciding factor' : 'Eligibility'}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  {routeIds.map((id) => (
+                    <TableCell
+                      key={id}
+                      align="right"
+                      sx={{ fontWeight: id === pick ? 600 : 400, whiteSpace: 'nowrap' }}
+                    >
+                      {formatCriterion(row.criterion, row.values[id] ?? null)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
       </AccordionDetails>
     </Accordion>
   );
