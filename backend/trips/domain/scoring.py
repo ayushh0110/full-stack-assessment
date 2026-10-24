@@ -257,7 +257,7 @@ def recommend(
         decisive = {"coverage"}
         explanation = (
             "Weather forecasts are unavailable for parts of every route, so no route can be "
-            "recommended. Try again shortly."
+            "recommended."
         )
 
     comparison = [

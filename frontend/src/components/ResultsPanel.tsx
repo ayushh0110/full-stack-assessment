@@ -33,6 +33,7 @@ export function ResultsPanel({
   const selectRoute = useAppStore((s) => s.selectRoute);
   const interval = useAppStore((s) => s.interval);
   const retryIn = useWeatherRetryIn();
+  const weatherBlocked = useAppStore((s) => s.weatherBlocked);
 
   if (planError) {
     return <Alert severity="error">{planError}</Alert>;
@@ -71,6 +72,15 @@ export function ResultsPanel({
         )}
       </Box>
 
+      {weatherBlocked && retryIn === 0 && (
+        <Alert severity="warning">
+          Your network has used up Open-Meteo&apos;s free weather limit (
+          {/daily/i.test(weatherBlocked) ? 'for today' : 'for this hour'}), so some forecasts are
+          missing and those stretches show as &quot;No data&quot;. It resets{' '}
+          {/daily/i.test(weatherBlocked) ? 'tomorrow' : 'within the hour'}; another network, such as
+          a phone hotspot, works straight away.
+        </Alert>
+      )}
       {retryIn > 0 && (
         <Alert severity="info" variant="outlined" icon={<HourglassTop fontSize="inherit" />}>
           Weather service rate limit reached. Retrying in {retryIn} s…

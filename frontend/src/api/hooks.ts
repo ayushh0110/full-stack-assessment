@@ -51,7 +51,10 @@ export function useWeatherRetryIn(): number {
   return useCountdown(useAppStore((s) => s.weatherRetryAt));
 }
 
-const onPause = (retryAt: number) => useAppStore.getState().setWeatherRetryAt(retryAt);
+const forecastEvents = {
+  onPause: (retryAt: number) => useAppStore.getState().setWeatherRetryAt(retryAt),
+  onBlocked: (reason: string | null) => useAppStore.getState().setWeatherBlocked(reason),
+};
 
 export function usePlaceSearch(query: string) {
   const debounced = useDebounced(query.trim(), 300);
@@ -75,7 +78,7 @@ export function useAssessment(routeSetId: string | undefined, interval: Interval
     // 3) let the server score the routes.
     queryFn: async ({ signal }) => {
       const request = await api.assessmentForecastRequest(routeSetId!, interval, signal);
-      const forecasts = await fetchForecasts(request.forecast, signal, onPause);
+      const forecasts = await fetchForecasts(request.forecast, signal, forecastEvents);
       return api.assess(routeSetId!, interval, forecasts, signal);
     },
     enabled: Boolean(routeSetId),
@@ -91,7 +94,7 @@ export function useHeatmap(routeSetId: string | undefined) {
     queryKey: ['heatmap', routeSetId],
     queryFn: async ({ signal }) => {
       const request = await api.heatmapForecastRequest(routeSetId!, signal);
-      const forecasts = await fetchForecasts(request.forecast, signal, onPause);
+      const forecasts = await fetchForecasts(request.forecast, signal, forecastEvents);
       return api.heatmap(routeSetId!, request.start_utc, forecasts, signal);
     },
     enabled: Boolean(routeSetId),

@@ -95,7 +95,7 @@ describe('fetchForecasts', () => {
     vi.stubGlobal('fetch', fetchMock);
     const onPause = vi.fn();
 
-    const pending = fetchForecasts(request([[40, -100]]), undefined, onPause);
+    const pending = fetchForecasts(request([[40, -100]]), undefined, { onPause });
     await vi.advanceTimersByTimeAsync(61_000);
     expect(fetchMock).toHaveBeenCalledTimes(1); // still waiting
     await vi.advanceTimersByTimeAsync(2_000);
@@ -111,9 +111,11 @@ describe('fetchForecasts', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(limited), { status: 429 }));
     vi.stubGlobal('fetch', fetchMock);
     const onPause = vi.fn();
-    const result = await fetchForecasts(request([[40, -100]]), undefined, onPause);
+    const onBlocked = vi.fn();
+    const result = await fetchForecasts(request([[40, -100]]), undefined, { onPause, onBlocked });
     expect(result).toEqual([null]);
     expect(onPause).not.toHaveBeenCalled();
+    expect(onBlocked).toHaveBeenCalledWith('Daily API request limit exceeded.');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

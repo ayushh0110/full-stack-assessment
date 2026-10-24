@@ -20,6 +20,8 @@ interface AppState {
   checkpoint: CheckpointRef | null;
   /** When the next forecast retry is due after hitting Open-Meteo's rate limit (ms), if any. */
   weatherRetryAt: number | null;
+  /** Open-Meteo's reason when an hourly or daily limit blocked the last forecast fetch. */
+  weatherBlocked: string | null;
 
   setRouteSet: (routeSet: RouteSet, input: TripInput) => void;
   setInterval: (interval: Interval) => void;
@@ -28,6 +30,7 @@ interface AppState {
   setPlaying: (playing: boolean) => void;
   openCheckpoint: (checkpoint: CheckpointRef | null) => void;
   setWeatherRetryAt: (retryAt: number) => void;
+  setWeatherBlocked: (reason: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -41,6 +44,7 @@ export const useAppStore = create<AppState>()(
     playing: false,
     checkpoint: null,
     weatherRetryAt: null,
+    weatherBlocked: null,
 
     setRouteSet: (routeSet, input) =>
       set({
@@ -61,5 +65,6 @@ export const useAppStore = create<AppState>()(
     setPlaying: (playing) => set({ playing }),
     openCheckpoint: (checkpoint) => set({ checkpoint }),
     setWeatherRetryAt: (weatherRetryAt) => set({ weatherRetryAt }),
+    setWeatherBlocked: (weatherBlocked) => set({ weatherBlocked }),
   })),
 );

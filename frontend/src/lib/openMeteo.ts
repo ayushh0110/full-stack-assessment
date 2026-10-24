@@ -17,7 +17,16 @@ const cache = new Map<string, OpenMeteoLocation>();
 /** Shared by every fetch in this tab, so concurrent fetches all back off together. */
 let pausedUntil = 0;
 
-type BatchResult = { items: (OpenMeteoLocation | null)[] } | { retryAfterS: number };
+type Limit = { retryAfterS: number } | { blocked: string };
+type BatchResult =
+  { items: (OpenMeteoLocation | null)[]; blocked?: string } | { retryAfterS: number };
+
+export interface ForecastEvents {
+  /** The per-minute limit was hit; fetching resumes at `retryAtMs`. */
+  onPause?: (retryAtMs: number) => void;
+  /** After each fetch: Open-Meteo's reason if a longer (hourly/daily) limit blocked it, else null. */
+  onBlocked?: (reason: string | null) => void;
+}
 
 function cacheKey([lat, lon]: LatLon, params: Record<string, string>): string {
   return `${lat},${lon}|${params.models}|${params.start_hour}|${params.end_hour}`;
@@ -38,12 +47,13 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Seconds to wait before retrying a 429, or null when waiting won't help (hourly/daily limit). */
-async function retryAfter(response: Response): Promise<number | null> {
+/** How to handle a 429: wait and retry (per-minute limit), or give up (hourly/daily limit). */
+async function readLimit(response: Response): Promise<Limit> {
   const header = Number(response.headers.get('Retry-After'));
-  if (header > 0) return header;
+  if (header > 0) return { retryAfterS: header };
   const body = await response.json().catch(() => null);
-  return /minute/i.test(body?.reason ?? '') ? MINUTE_LIMIT_WAIT_S : null;
+  const reason: string = body?.reason ?? 'The weather service rate limit was reached.';
+  return /minute/i.test(reason) ? { retryAfterS: MINUTE_LIMIT_WAIT_S } : { blocked: reason };
 }
 
 async function fetchBatch(
@@ -60,8 +70,8 @@ async function fetchBatch(
   try {
     const response = await fetch(`${request.url}?${query}`, { signal });
     if (response.status === 429) {
-      const seconds = await retryAfter(response);
-      return seconds === null ? missing : { retryAfterS: seconds };
+      const limit = await readLimit(response);
+      return 'blocked' in limit ? { ...missing, blocked: limit.blocked } : limit;
     }
     if (!response.ok) return missing;
     const data = await response.json();
@@ -89,13 +99,14 @@ async function fetchBatch(
  * responses: the server checks them and does all the risk scoring. Returns one entry per
  * requested location, in order, with null where a batch failed (scored as "no data", never Low).
  *
- * When Open-Meteo's per-minute limit is hit, fetching pauses and retries; `onPause` receives the
- * time (ms) the retry is due, so the UI can count down.
+ * When Open-Meteo's per-minute limit is hit, fetching pauses and retries (`onPause` gets the time
+ * the retry is due, for a countdown). An hourly or daily limit isn't retried; `onBlocked` gets
+ * Open-Meteo's reason so the UI can say what happened.
  */
 export async function fetchForecasts(
   request: ForecastRequest,
   signal?: AbortSignal,
-  onPause?: (retryAtMs: number) => void,
+  events: ForecastEvents = {},
 ): Promise<(OpenMeteoLocation | null)[]> {
   const results = request.locations.map((loc) => cache.get(cacheKey(loc, request.params)) ?? null);
   const missing = results.flatMap((found, index) => (found ? [] : [index]));
@@ -105,6 +116,7 @@ export async function fetchForecasts(
   }
 
   let next = 0;
+  let blocked: string | null = null;
   const worker = async () => {
     while (next < batches.length) {
       const batch = batches[next++];
@@ -115,11 +127,12 @@ export async function fetchForecasts(
         const result = await fetchBatch(request, locations, signal);
         if ('items' in result) {
           items = result.items;
+          blocked = result.blocked ?? blocked;
           break;
         }
         if (attempt < MAX_RETRIES) {
           pausedUntil = Math.max(pausedUntil, Date.now() + result.retryAfterS * 1000);
-          onPause?.(pausedUntil);
+          events.onPause?.(pausedUntil);
         }
       }
       batch.forEach((index, k) => {
@@ -129,6 +142,7 @@ export async function fetchForecasts(
     }
   };
   await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL, batches.length) }, worker));
+  events.onBlocked?.(blocked);
   return results;
 }
 
