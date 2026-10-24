@@ -3,6 +3,8 @@
 Source brief: `fs-assessment-spotter.pdf` (Full Stack Developer assessment, React + Django).
 Revision 2, 2026-10-24. This version folds in an external review and lines the plan up with the job description (React + **MUI**, DRF, Redis, Docker, GCP). Appendix A lists every review point and what was done with it.
 
+> This is the plan written before building. Where the built app differs (forecasts fetched by the browser, Render instead of Cloud Run, Photon for place search, and others), **Appendix B** lists each change and why. The README describes the app as built.
+
 ---
 
 ## 1. What we're building
@@ -526,5 +528,7 @@ Verdicts on the external review, checked against the TomTom, Open-Meteo and MapL
 | `react-map-gl` | MapLibre GL used directly | Imperative control over sources, filters and paint, which keeps slider updates outside React rendering |
 | Google Cloud Run + Upstash Redis | Render free web service from `render.yaml`, in-memory cache | No billing account needed. One instance doesn't need a shared cache |
 | Server fetches Open-Meteo, cached in Redis | The server says what to fetch, the visitor's browser fetches it, the server validates and scores it | On Render's free plan, Open-Meteo's per-IP daily limit was already used up by other apps on the shared IP (HTTP 429). Fetching from the browser uses each visitor's own quota. All logic stays on the server |
+| Third route up to 30% longer than the fastest | Up to 50% longer, labelled "long detour" when over 30% | Short trips with only two sensible corridors (e.g. Amarillo → Denver) otherwise showed 2 routes, while the brief asks for 3. Ranking is unchanged, so a long detour only wins if it's the safest |
+| ETAs only in checkpoint popups | ETA labels next to the selected route's checkpoints when zoomed in, and a worst-risk dot on each route's map chip | The brief asks for ETAs and route summaries on the map, visible without clicking |
 | Third route: avoid the middle of the fastest route | Avoid the middle of every route found so far | For Denver → Chicago, the detour around I-80 just rediscovered I-70 (route B) and was rightly rejected as a duplicate |
 | Mobile bottom sheet | Stacked layout (map above the panel) | Cut-list item. A compact legend and a two-line slider header keep phones usable |

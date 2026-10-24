@@ -108,6 +108,11 @@ export function RouteCard({
             <Typography variant="caption" color="text.secondary" component="div">
               Arrives {formatTime(route.arrival_utc, arrivalTz)}
             </Typography>
+            {route.long_detour && (
+              <Typography variant="caption" color="warning.main" fontWeight={600} component="div">
+                Long detour: about {route.detour_pct}% longer than the fastest route
+              </Typography>
+            )}
           </Box>
           <StatusChip pick={pick} exclusion={exclusion} />
         </Stack>

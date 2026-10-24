@@ -5,6 +5,7 @@ import pytest
 from trips.domain.alternatives import (
     avoid_rects,
     backtrack_mi,
+    detour_ratio,
     distinct_share,
     rejection_reason,
 )
@@ -42,12 +43,20 @@ def test_candidate_checks():
     fastest = straight_track(200)
     parallel = straight_track(200, lon_offset_mi=5)
     assert rejection_reason(parallel, [fastest]) is None
+    assert rejection_reason(scaled(parallel, 1.45), [fastest]) is None  # long, but allowed
     assert (
-        rejection_reason(scaled(parallel, 1.5), [fastest])
+        rejection_reason(scaled(parallel, 1.6), [fastest])
         == "too slow compared with the fastest route"
     )
-    assert rejection_reason(straight_track(300, lon_offset_mi=5), [fastest]).startswith("too")
+    assert rejection_reason(straight_track(320, lon_offset_mi=5), [fastest]).startswith("too")
     assert rejection_reason(fastest, [fastest]) == "not distinct enough from the existing routes"
+
+
+def test_detour_ratio_takes_the_worse_of_time_and_distance():
+    fastest = straight_track(200)
+    assert detour_ratio(fastest, fastest) == 1.0
+    assert detour_ratio(scaled(fastest, 1.4), fastest) == pytest.approx(1.4)
+    assert detour_ratio(straight_track(260, speed_mph=65), fastest) == pytest.approx(1.3, abs=0.01)
 
 
 def test_avoid_rects_cover_the_middle_and_stay_small():

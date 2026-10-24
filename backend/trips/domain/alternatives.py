@@ -15,7 +15,10 @@ from .sampling import Track
 
 DISTINCT_AWAY_MI = 1.0  # a sample further than this from every existing route counts as distinct
 MIN_DISTINCT_SHARE = 0.25
-MAX_DETOUR_RATIO = 1.3
+# The brief asks for three options, so a fallback route may be up to 50% longer than the fastest;
+# anything over 30% longer is labelled a long detour so the trade-off is visible.
+MAX_DETOUR_RATIO = 1.5
+LONG_DETOUR_RATIO = 1.3
 BACKTRACK_STEP_MI = 10.0
 
 
@@ -89,6 +92,16 @@ def backtrack_mi(track: Track, step_mi: float = BACKTRACK_STEP_MI) -> float:
     destination = track.points[-1]
     gaps = [haversine_mi(p, destination) for p in _samples(track, step_mi)]
     return float(sum(max(0.0, b - a) for a, b in pairwise(gaps)))
+
+
+def detour_ratio(track: Track, fastest: Track) -> float:
+    """How much longer `track` is than `fastest`, by time or distance, whichever is worse."""
+    ratios = [1.0]
+    if fastest.duration_s > 0:
+        ratios.append(track.duration_s / fastest.duration_s)
+    if fastest.total_mi > 0:
+        ratios.append(track.total_mi / fastest.total_mi)
+    return max(ratios)
 
 
 def rejection_reason(candidate: Track, existing: Sequence[Track]) -> str | None:

@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type { Assessment, Heatmap, LatLon, RouteOption } from '../api/types';
+import { formatClock } from './format';
 
 export type LngLat = [number, number];
 
@@ -73,13 +74,22 @@ export function segmentFeatures(assessment: Assessment): FeatureCollection<LineS
   };
 }
 
-export function checkpointFeatures(assessment: Assessment): FeatureCollection<Point> {
+/** Checkpoints with their risk level and ETA label (clock time in `timeZone`). */
+export function checkpointFeatures(
+  assessment: Assessment,
+  timeZone: string,
+): FeatureCollection<Point> {
   return {
     type: 'FeatureCollection',
     features: assessment.routes.flatMap((route) =>
       route.checkpoints.map((cp, index): Feature<Point> => ({
         type: 'Feature',
-        properties: { routeId: route.id, index, level: cp.level ?? -1 },
+        properties: {
+          routeId: route.id,
+          index,
+          level: cp.level ?? -1,
+          eta: formatClock(cp.eta_utc, timeZone),
+        },
         geometry: { type: 'Point', coordinates: [cp.lon, cp.lat] },
       })),
     ),

@@ -11,6 +11,8 @@ const route: RouteOption = {
   distance_mi: 100,
   duration_s: 7200,
   arrival_utc: '2026-10-25T14:00:00Z',
+  detour_pct: 0,
+  long_detour: false,
   eta_source: 'progress',
   geometry: [
     [40, -100],

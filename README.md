@@ -97,6 +97,13 @@ flowchart LR
 
 The UI explains the result in a sentence (for example, "fewest Severe miles: 0 vs 75 on Route B"). The "Why this route?" table shows every criterion for every route, with the deciding row highlighted.
 
+### On the map
+
+- **Routes:** the selected route is coloured stretch by stretch with its risk level. The other routes are grey; click one to select it.
+- **Checkpoints:** dots coloured by risk. Zoom in to see each one's ETA next to it, or click one for its ETA, wind, rain, snow and the reason for its level.
+- **Route summaries:** a chip at each route's midpoint shows distance, driving time, a dot in the colour of its worst risk level, and a tick on the recommended route.
+- **Heatmap:** corridor cells coloured by risk for the forecast hour on the slider (0–48 h from now). Press play to animate it. A truck marker shows where the selected route puts the driver at that hour.
+
 ## Interpretation choices
 
 The brief leaves a few details open. These are the choices made, each kept in one place in the code:
@@ -152,7 +159,8 @@ Error codes:
 With `TOMTOM_API_KEY` set, routes come from TomTom's truck routing:
 - It's given the vehicle's weight and commercial status, and the departure time for traffic-aware ETAs.
 - It requests up to two alternatives.
-- If fewer than three routes come back, it makes one more request that avoids the middle stretch of every route found so far, so the router has to use a different corridor. The extra route is kept only if it's genuinely different, no more than 30% slower or longer, and doesn't double back.
+- If fewer than three routes come back, it makes one more request that avoids the middle stretch of every route found so far, so the router has to use a different corridor. The extra route is kept only if at least a quarter of it uses different roads, it's no more than 50% slower or longer, and it doesn't double back.
+- Any route more than 30% longer than the fastest is labelled **long detour** on its card. It stays in the comparison because the brief asks for three options, but it only wins if it really is the safest.
 
 Without a key, the app falls back to the public OSRM server so it can be run and evaluated without signing up. OSRM is **car** routing and ignores truck restrictions, and the UI says so. All weather and risk logic is identical either way.
 

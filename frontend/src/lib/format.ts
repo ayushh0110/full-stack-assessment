@@ -39,6 +39,11 @@ export function formatTime(value: string | number | Date, timeZone: string): str
   }).format(new Date(value));
 }
 
+/** "3:06 PM": compact clock time for map labels. */
+export function formatClock(value: string | number | Date, timeZone: string): string {
+  return formatter(timeZone, { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+}
+
 export function zoneAbbreviation(timeZone: string, at: Date = new Date()): string {
   const part = formatter(timeZone, { timeZoneName: 'short' })
     .formatToParts(at)

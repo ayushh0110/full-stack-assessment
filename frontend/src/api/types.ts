@@ -24,6 +24,9 @@ export interface RouteOption {
   distance_mi: number;
   duration_s: number;
   arrival_utc: string;
+  /** How much longer than the fastest route, by time or distance (whichever is worse). */
+  detour_pct: number;
+  long_detour: boolean;
   eta_source: 'progress' | 'instructions' | 'proportional';
   geometry: LatLon[];
   elapsed_s: number[];

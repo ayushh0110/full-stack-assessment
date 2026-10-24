@@ -172,6 +172,31 @@ def test_fallback_avoids_every_existing_route(api, monkeypatch):
     assert body["notes"] == []
 
 
+class SlowThirdRouting(FakeRouting):
+    def routes(self, origin, destination, depart_at, gross_lb, *, max_alternatives=2, avoid=()):
+        raws = []
+        for offset_mi, speed in ((0, 50), (20, 45), (40, 34)):  # C takes ~47% longer than A
+            track = straight_track(200, n=201, speed_mph=speed, lon_offset_mi=offset_mi)
+            raws.append(
+                RawRoute(
+                    points=track.points,
+                    length_m=track.total_mi * METERS_PER_MILE,
+                    duration_s=track.duration_s,
+                    progress=list(enumerate(track.elapsed_s.tolist())),
+                )
+            )
+        return raws
+
+
+def test_long_detours_are_labelled(api, monkeypatch):
+    monkeypatch.setattr(services, "routing_provider", lambda: SlowThirdRouting())
+    routes = {r["id"]: r for r in create(api).json()["routes"]}
+    assert (routes["A"]["long_detour"], routes["A"]["detour_pct"]) == (False, 0)
+    assert (routes["B"]["long_detour"], routes["B"]["detour_pct"]) == (False, 11)
+    assert routes["C"]["long_detour"] is True
+    assert routes["C"]["detour_pct"] == 47
+
+
 def test_forecast_request_lists_unique_checkpoint_locations(api, routing):
     rs = create(api).json()
     body = api.get(

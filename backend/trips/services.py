@@ -16,7 +16,13 @@ from timezonefinder import TimezoneFinder
 
 from trips import store
 from trips.domain import risk
-from trips.domain.alternatives import avoid_rects, distinct_share, rejection_reason
+from trips.domain.alternatives import (
+    LONG_DETOUR_RATIO,
+    avoid_rects,
+    detour_ratio,
+    distinct_share,
+    rejection_reason,
+)
 from trips.domain.corridor import CellGrid, corridor_grid
 from trips.domain.geo import METERS_PER_MILE, LatLon, cumulative_mi, slice_between
 from trips.domain.sampling import Slot, Track, build_time_profile, place_checkpoints
@@ -229,10 +235,13 @@ def create_route_set(req: TripRequest, now: datetime | None = None) -> dict[str,
 
 def route_set_response(route_set: dict[str, Any]) -> dict[str, Any]:
     departure = datetime.fromisoformat(route_set["departure_utc"])
+    tracks = {r["id"]: _track_from_store(r["track"]) for r in route_set["routes"]}
+    fastest = min(tracks.values(), key=lambda t: t.duration_s)
     routes = []
     for r in route_set["routes"]:
-        track = _track_from_store(r["track"])
+        track = tracks[r["id"]]
         display = track.simplified(DISPLAY_TOLERANCE_DEG)
+        ratio = detour_ratio(track, fastest)
         routes.append(
             {
                 "id": r["id"],
@@ -240,6 +249,8 @@ def route_set_response(route_set: dict[str, Any]) -> dict[str, Any]:
                 "distance_mi": round(track.total_mi, 1),
                 "duration_s": round(track.duration_s),
                 "arrival_utc": _iso(departure + timedelta(seconds=track.duration_s)),
+                "detour_pct": round((ratio - 1) * 100),
+                "long_detour": ratio > LONG_DETOUR_RATIO,
                 "eta_source": r["eta_source"],
                 "geometry": [[round(a, 5), round(b, 5)] for a, b in display.points],
                 "elapsed_s": [round(float(s)) for s in display.elapsed_s],

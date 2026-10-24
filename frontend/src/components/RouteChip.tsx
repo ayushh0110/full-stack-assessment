@@ -1,21 +1,26 @@
 import CheckCircle from '@mui/icons-material/CheckCircle';
-import { ButtonBase, Typography } from '@mui/material';
-import type { RouteOption } from '../api/types';
+import { Box, ButtonBase, Typography } from '@mui/material';
+import type { RiskLevel, RouteOption } from '../api/types';
 import { formatDuration, formatMiles } from '../lib/format';
+import { riskMeta } from '../lib/risk';
 
 interface Props {
   route: RouteOption;
   selected: boolean;
   recommended: boolean;
+  /** Worst risk level on the route, once assessed (null: no forecast). */
+  worst?: RiskLevel | null;
   onSelect: () => void;
 }
 
 /** Route summary pinned to the map at the route's midpoint. */
-export function RouteChip({ route, selected, recommended, onSelect }: Props) {
+export function RouteChip({ route, selected, recommended, worst, onSelect }: Props) {
+  const risk = worst === undefined ? null : riskMeta(worst);
   return (
     <ButtonBase
       onClick={onSelect}
-      aria-label={`Select route ${route.id}`}
+      aria-label={`Select route ${route.id}${risk ? `, worst risk ${risk.label}` : ''}`}
+      title={risk ? `Worst risk on route ${route.id}: ${risk.label}` : undefined}
       sx={{
         px: 1,
         py: 0.5,
@@ -29,6 +34,18 @@ export function RouteChip({ route, selected, recommended, onSelect }: Props) {
         whiteSpace: 'nowrap',
       }}
     >
+      {risk && (
+        <Box
+          sx={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            bgcolor: risk.color,
+            border: '1.5px solid #fff',
+            boxShadow: '0 0 0 1px rgba(20,24,31,.45)',
+          }}
+        />
+      )}
       <Typography variant="caption" fontWeight={700}>
         {route.id}
       </Typography>

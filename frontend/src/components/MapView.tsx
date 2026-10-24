@@ -114,6 +114,24 @@ function addLayers(map: MapLibreMap) {
       'circle-stroke-width': 0.5,
     },
   });
+  // ETA beside each checkpoint of the selected route, once zoomed in enough to read them;
+  // labels that would collide are dropped automatically.
+  map.addLayer({
+    id: 'checkpoint-etas',
+    type: 'symbol',
+    source: 'checkpoints',
+    minzoom: 6,
+    filter: ['==', ['get', 'routeId'], ''],
+    layout: {
+      'text-field': ['get', 'eta'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 11,
+      'text-anchor': 'left',
+      'text-offset': [0.9, 0],
+      'text-padding': 6,
+    },
+    paint: { 'text-color': '#14181f', 'text-halo-color': '#ffffff', 'text-halo-width': 1.6 },
+  });
 }
 
 interface Props {
@@ -183,8 +201,12 @@ export function MapView({ routeSet, assessment, heatmap, recommendedId, forecast
     const map = mapRef.current;
     if (!ready || !map) return;
     setData(map, 'segments', assessment ? segmentFeatures(assessment) : EMPTY);
-    setData(map, 'checkpoints', assessment ? checkpointFeatures(assessment) : EMPTY);
-  }, [ready, assessment]);
+    setData(
+      map,
+      'checkpoints',
+      assessment && routeSet ? checkpointFeatures(assessment, routeSet.origin_tz) : EMPTY,
+    );
+  }, [ready, assessment, routeSet]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -214,6 +236,7 @@ export function MapView({ routeSet, assessment, heatmap, recommendedId, forecast
     ]);
     map.setPaintProperty('checkpoints', 'circle-stroke-width', ['case', onSelected, 1.5, 0.5]);
     map.setLayoutProperty('checkpoints', 'circle-sort-key', ['case', onSelected, 1, 0]);
+    map.setFilter('checkpoint-etas', onSelected);
   }, [ready, selectedRouteId]);
 
   // The forecast slider never re-renders this component: it is applied straight to the map,
@@ -384,7 +407,8 @@ export function MapView({ routeSet, assessment, heatmap, recommendedId, forecast
     <>
       <Box
         ref={containerRef}
-        sx={{ position: 'absolute', inset: 0 }}
+        // Own stacking context: route chips and markers stay under the legend and slider.
+        sx={{ position: 'absolute', inset: 0, isolation: 'isolate' }}
         aria-label="Route map"
         role="region"
       />
@@ -410,6 +434,7 @@ export function MapView({ routeSet, assessment, heatmap, recommendedId, forecast
                 route={route}
                 selected={id === selectedRouteId}
                 recommended={id === recommendedId}
+                worst={assessment?.routes.find((r) => r.id === id)?.summary.max_level}
                 onSelect={() => selectRoute(id)}
               />,
               node,
